@@ -76,7 +76,7 @@ final class LaravelRouteLensService
 
             $methods = $route->methods();
             // Filter out HEAD and OPTIONS methods for cleaner display
-            $methods = array_filter($methods, fn($method): bool => ! in_array($method, ['HEAD', 'OPTIONS']));
+            $methods = array_filter($methods, fn ($method): bool => ! in_array($method, ['HEAD', 'OPTIONS']));
 
             if ($methods === []) {
                 continue;
@@ -94,7 +94,7 @@ final class LaravelRouteLensService
         }
 
         // Sort routes by path
-        usort($routes, fn(array $a, array $b): int => strcmp((string) $a['path'], (string) $b['path']));
+        usort($routes, fn (array $a, array $b): int => strcmp($a['path'], $b['path']));
 
         return $routes;
     }
