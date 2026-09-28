@@ -121,6 +121,7 @@ A beautiful, responsive interface that displays:
 - Routes grouped by path prefix, with audit issues flagged on each route
 - Expandable details: action, file:line (opens in your editor), parameters and the middleware execution order
 - Copy a path, or open parameter-free GET routes in a new tab
+- Shareable URLs: the view, search, filters and the expanded route are kept in the query string (e.g. `/routescope?view=api&noauth=1&route=GET+/api/users`), so you can bookmark a filtered view or link a teammate to a specific route
 
 ### 🔌 Programmatic Access
 Query routes from your code using the facade or dependency injection. Each route is a typed `RouteData` object:
