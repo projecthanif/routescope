@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Illuminate\Routing\RouteCollection;
 use Illuminate\Support\Facades\Route;
+use Projecthanif\RouteScope\Data\RouteData;
+use Projecthanif\RouteScope\Data\RouteParameter;
 use Projecthanif\RouteScope\Facades\RouteScope;
 use Projecthanif\RouteScope\Tests\Fixtures\ShowDashboard;
 
@@ -11,131 +13,151 @@ beforeEach(function (): void {
     Route::setRoutes(new RouteCollection);
 });
 
-/**
- * @return list<array<string, mixed>>
- */
-function allRoutes(): array
+function routeAt(string $uri): RouteData
 {
-    $routes = RouteScope::getAllRoutes();
+    $route = RouteScope::all()->first(fn (RouteData $route): bool => $route->uri === $uri);
 
-    return [...$routes['apiRoutes']->all(), ...$routes['webRoutes']->all()];
+    expect($route)->toBeInstanceOf(RouteData::class);
+
+    return $route;
 }
 
-function sourceFor(string $path): string
-{
-    return collect(allRoutes())->firstWhere('path', $path)['source'];
-}
+it('returns one entry per route with all of its methods', function (): void {
+    Route::addRoute(['PURGE', 'DELETE', 'GET', 'POST'], 'posts', fn (): string => '');
 
-it('formats routes', function (): void {
-    Route::get('users', 'App\Http\Controllers\UserController@index')
-        ->name('users.index')
-        ->middleware(['web', 'auth']);
+    expect(RouteScope::all())->toHaveCount(1)
+        ->and(routeAt('/posts')->methods)->toBe(['GET', 'POST', 'DELETE', 'PURGE']);
+});
 
-    expect(RouteScope::getAllRoutes()['webRoutes']->all())->toBe([
-        [
-            'method' => 'GET',
-            'path' => '/users',
-            'source' => 'http/controllers/UserController::index',
-            'name' => 'users.index',
-            'middleware' => ['web', 'auth'],
+it('skips routes that only respond to HEAD or OPTIONS', function (): void {
+    Route::options('preflight', fn (): string => '');
+
+    expect(RouteScope::all())->toBeEmpty();
+});
+
+it('sorts routes by uri and then by first method', function (): void {
+    Route::post('b', fn (): string => '');
+    Route::get('a', fn (): string => '');
+    Route::delete('b', fn (): string => '')->name('b.delete');
+    Route::get('b', fn (): string => '');
+
+    expect(RouteScope::all()->map(fn (RouteData $r): string => $r->methods[0].' '.$r->uri)->all())
+        ->toBe(['GET /a', 'GET /b', 'POST /b', 'DELETE /b']);
+});
+
+it('describes a route', function (): void {
+    app()->setBasePath(dirname(__DIR__, 2));
+
+    Route::get('dashboard/{team}/{tab?}', ShowDashboard::class)
+        ->name('dashboard')
+        ->domain('{account}.example.com')
+        ->middleware(['web', 'auth'])
+        ->whereNumber('team');
+
+    expect(routeAt('/dashboard/{team}/{tab?}')->toArray())->toBe([
+        'methods' => ['GET'],
+        'uri' => '/dashboard/{team}/{tab?}',
+        'name' => 'dashboard',
+        'domain' => '{account}.example.com',
+        'action' => ShowDashboard::class,
+        'source' => 'projecthanif/.../fixtures/ShowDashboard::__invoke',
+        'middleware' => ['web', 'auth'],
+        'resolved_middleware' => ['web', 'auth'],
+        'parameters' => [
+            ['name' => 'team', 'optional' => false, 'pattern' => '[0-9]+'],
+            ['name' => 'tab', 'optional' => true, 'pattern' => null],
         ],
+        'file' => 'tests/Fixtures/ShowDashboard.php',
+        'line' => 9,
+        'is_api' => false,
+        'is_fallback' => false,
     ]);
 });
 
-it('splits api and web routes by prefix and middleware group', function (): void {
-    Route::get('api', fn (): string => '');
-    Route::get('api/users', fn (): string => '');
-    Route::get('v1/orders', fn (): string => '')->middleware('api');
-    Route::get('apiary', fn (): string => '');
-    Route::get('/', fn (): string => '');
+it('serializes to json', function (): void {
+    Route::get('users/{user}', fn (): string => '');
 
-    $routes = RouteScope::getAllRoutes();
+    $json = json_decode((string) json_encode(RouteScope::all()), true);
 
-    expect($routes['apiRoutes']->pluck('path')->all())->toBe(['/api', '/api/users', '/v1/orders'])
-        ->and($routes['webRoutes']->pluck('path')->all())->toBe(['/', '/apiary']);
+    expect($json[0]['uri'])->toBe('/users/{user}')
+        ->and($json[0]['parameters'])->toBe([['name' => 'user', 'optional' => false, 'pattern' => null]]);
 });
 
-it('hides HEAD and OPTIONS and sorts by path then method', function (): void {
-    Route::delete('posts', fn (): string => '');
-    Route::addRoute('PURGE', 'posts', fn (): string => '');
-    Route::post('posts', fn (): string => '');
-    Route::get('posts', fn (): string => '');
-    Route::options('posts', fn (): string => '');
-    Route::get('comments', fn (): string => '');
-
-    expect(collect(allRoutes())->map(fn (array $r): string => $r['method'].' '.$r['path'])->all())->toBe([
-        'GET /comments',
-        'GET /posts',
-        'POST /posts',
-        'DELETE /posts',
-        'PURGE /posts',
-    ]);
-});
-
-it('excludes matching paths and everything beneath them', function (): void {
-    config(['routescope.excluded_patterns' => ['telescope', '/admin/*/debug/']]);
-
-    Route::get('telescope', fn (): string => '');
-    Route::get('telescope/requests', fn (): string => '');
-    Route::get('telescopes', fn (): string => '');
-    Route::get('shop/telescope', fn (): string => '');
-    Route::get('admin/users/debug', fn (): string => '');
-    Route::get('admin/users/debug/sql', fn (): string => '');
-    Route::get('admin/users', fn (): string => '');
-
-    expect(collect(allRoutes())->pluck('path')->all())
-        ->toBe(['/admin/users', '/shop/telescope', '/telescopes']);
-});
-
-it('ignores an invalid excluded_patterns config', function (): void {
-    config(['routescope.excluded_patterns' => 'telescope']);
-
-    Route::get('telescope', fn (): string => '');
-
-    expect(collect(allRoutes())->pluck('path')->all())->toBe(['/telescope']);
-});
-
-it('always hides its own routes', function (): void {
-    config(['routescope.prefix' => 'custom-scope']);
-    $this->rebootPackage();
-
-    Route::get('users', fn (): string => '');
-
-    expect(collect(allRoutes())->pluck('path')->all())->toBe(['/users']);
-});
-
-it('only keeps string middleware', function (): void {
-    Route::get('users', fn (): string => '')->middleware(['auth', 'throttle:60,1']);
-
-    expect(allRoutes()[0]['middleware'])->toBe(['auth', 'throttle:60,1']);
-});
-
-it('describes route sources', function (): void {
+it('locates closures by absolute path when outside the app', function (): void {
     Route::get('closure', fn (): string => '');
-    Route::get('invokable', ShowDashboard::class);
-    Route::get('fqcn', '\App\Http\Controllers\PostController@show');
-    Route::get('deep', 'App\Http\Controllers\Admin\Reports\Quarterly\ExportController@index');
-    Route::get('vendor', 'Vendor\Package\Http\WidgetController@index');
-    Route::get('global', 'GlobalController@index');
+
+    expect(routeAt('/closure')->file)->toBe(__FILE__)
+        ->and(routeAt('/closure')->line)->toBe(__LINE__ - 3);
+});
+
+it('has no location when the action cannot be reflected', function (): void {
+    Route::get('missing', 'App\Http\Controllers\MissingController@index');
     Route::view('about', 'pages.about');
     Route::redirect('old', '/new');
-
-    expect(sourceFor('/closure'))->toBe('Closure')
-        ->and(sourceFor('/invokable'))->toBe('projecthanif/.../fixtures/ShowDashboard::__invoke')
-        ->and(sourceFor('/fqcn'))->toBe('http/controllers/PostController::show')
-        ->and(sourceFor('/deep'))->toBe('http/.../quarterly/ExportController::index')
-        ->and(sourceFor('/vendor'))->toBe('vendor/package/http/WidgetController::index')
-        ->and(sourceFor('/global'))->toBe('app/GlobalController::index')
-        ->and(sourceFor('/about'))->toBe('View: pages.about')
-        ->and(sourceFor('/old'))->toBe('Redirect: /new');
-});
-
-it('reports closures from cached routes as closures', function (): void {
     Route::get('cached', fn (): string => '');
 
     // Cached routes store closures as serialized strings, not Closure instances.
-    $route = Route::getRoutes()->getRoutes()[0];
-    $route->setAction(array_merge($route->getAction(), ['uses' => 'O:47:"Laravel\SerializableClosure\SerializableClosure":0:{}']));
+    $cached = Route::getRoutes()->getRoutes()[3];
+    $cached->setAction(array_merge($cached->getAction(), ['uses' => 'O:47:"Laravel\SerializableClosure\SerializableClosure":0:{}']));
 
-    expect(sourceFor('/cached'))->toBe('Closure');
+    foreach (['/missing', '/about', '/old', '/cached'] as $uri) {
+        expect(routeAt($uri)->file)->toBeNull()
+            ->and(routeAt($uri)->line)->toBeNull();
+    }
+
+    expect(routeAt('/missing')->action)->toBe('App\Http\Controllers\MissingController@index');
+});
+
+it('resolves middleware groups and aliases', function (): void {
+    $router = app('router');
+    $router->middlewareGroup('admin', ['auth', 'verified']);
+    $router->aliasMiddleware('auth', 'App\Http\Middleware\Authenticate');
+
+    Route::get('admin', fn (): string => '')->middleware(['admin', 'throttle:60,1']);
+
+    expect(routeAt('/admin')->middleware)->toBe(['admin', 'throttle:60,1'])
+        ->and(routeAt('/admin')->resolvedMiddleware)->toBe(['App\Http\Middleware\Authenticate', 'verified', 'throttle:60,1']);
+});
+
+it('flags fallback routes', function (): void {
+    Route::fallback(fn (): string => '');
+
+    expect(routeAt('/{fallbackPlaceholder}')->isFallback)->toBeTrue();
+});
+
+it('splits and filters routes', function (): void {
+    Route::get('api/users', fn (): string => '');
+    Route::get('v1/orders', fn (): string => '')->middleware('api');
+    Route::get('about', fn (): string => '')->middleware('auth');
+
+    expect(RouteScope::api()->pluck('uri')->all())->toBe(['/api/users', '/v1/orders'])
+        ->and(RouteScope::web()->pluck('uri')->all())->toBe(['/about'])
+        ->and(RouteScope::filter(fn (RouteData $r): bool => $r->hasMiddleware('auth'))->pluck('uri')->all())->toBe(['/about']);
+});
+
+it('checks methods and middleware on a route', function (): void {
+    $route = new RouteData(
+        methods: ['GET', 'POST'],
+        uri: '/users',
+        name: null,
+        domain: null,
+        action: 'Closure',
+        source: 'Closure',
+        middleware: ['web', 'throttle:60,1'],
+        resolvedMiddleware: ['App\Http\Middleware\EncryptCookies'],
+        parameters: [new RouteParameter('user', false, null)],
+        file: null,
+        line: null,
+        isApi: false,
+        isFallback: false,
+    );
+
+    expect($route->hasMethod('post'))->toBeTrue()
+        ->and($route->hasMethod('DELETE'))->toBeFalse()
+        ->and($route->hasMiddleware('web'))->toBeTrue()
+        ->and($route->hasMiddleware('throttle'))->toBeTrue()
+        ->and($route->hasMiddleware('throttle:60,1'))->toBeTrue()
+        ->and($route->hasMiddleware('App\Http\Middleware\EncryptCookies'))->toBeTrue()
+        ->and($route->hasMiddleware('thro'))->toBeFalse()
+        ->and($route->parameters[0]->jsonSerialize())->toBe(['name' => 'user', 'optional' => false, 'pattern' => null]);
 });

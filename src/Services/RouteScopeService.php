@@ -4,91 +4,160 @@ declare(strict_types=1);
 
 namespace Projecthanif\RouteScope\Services;
 
+use Closure;
 use Illuminate\Routing\RedirectController;
 use Illuminate\Routing\Route;
+use Illuminate\Routing\Router;
 use Illuminate\Routing\ViewController;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Route as RouteFacade;
 use Illuminate\Support\Str;
+use Projecthanif\RouteScope\Data\RouteData;
+use Projecthanif\RouteScope\Data\RouteParameter;
+use ReflectionException;
+use ReflectionFunction;
+use ReflectionFunctionAbstract;
+use ReflectionMethod;
 
 /**
- * @phpstan-type RouteArray array{method: string, path: string, source: string, name: string|null, middleware: list<string>}
+ * @phpstan-type LegacyRouteArray array{method: string, path: string, source: string, name: string|null, middleware: list<string>}
  */
-final class RouteScopeService
+final readonly class RouteScopeService
 {
     /**
-     * Display order for HTTP methods sharing the same path.
+     * Display order for HTTP methods.
      */
-    private const METHOD_ORDER = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+    private const array METHOD_ORDER = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+
+    public function __construct(private Router $router) {}
 
     /**
-     * Get all routes organized by category.
+     * Get every route, sorted by URI and then by HTTP method.
      *
-     * @return array{apiRoutes: Collection<int, RouteArray>, webRoutes: Collection<int, RouteArray>}
+     * @return Collection<int, RouteData>
      */
-    public function getAllRoutes(): array
-    {
-        $routes = collect($this->getFormattedRoutes());
-
-        return [
-            'apiRoutes' => $routes->filter(fn (array $route): bool => $route['is_api'])->map($this->withoutApiFlag(...))->values(),
-            'webRoutes' => $routes->reject(fn (array $route): bool => $route['is_api'])->map($this->withoutApiFlag(...))->values(),
-        ];
-    }
-
-    /**
-     * @param  array{method: string, path: string, source: string, name: string|null, middleware: list<string>, is_api: bool}  $route
-     * @return RouteArray
-     */
-    private function withoutApiFlag(array $route): array
-    {
-        return [
-            'method' => $route['method'],
-            'path' => $route['path'],
-            'source' => $route['source'],
-            'name' => $route['name'],
-            'middleware' => $route['middleware'],
-        ];
-    }
-
-    /**
-     * @return list<array{method: string, path: string, source: string, name: string|null, middleware: list<string>, is_api: bool}>
-     */
-    private function getFormattedRoutes(): array
+    public function all(): Collection
     {
         $routes = [];
 
-        foreach (RouteFacade::getRoutes()->getRoutes() as $route) {
+        foreach ($this->router->getRoutes()->getRoutes() as $route) {
             if ($this->shouldSkipRoute($route)) {
                 continue;
             }
 
-            // Filter out HEAD and OPTIONS methods for cleaner display
-            $methods = array_filter(
-                $route->methods(),
-                fn (mixed $method): bool => is_string($method) && ! in_array($method, ['HEAD', 'OPTIONS'], true),
-            );
+            $methods = $this->getMethods($route);
 
-            $middleware = $this->getMiddleware($route);
-            $source = $this->getRouteSource($route);
-            $isApi = $this->isApiRoute($route, $middleware);
-
-            foreach ($methods as $method) {
-                $routes[] = [
-                    'method' => $method,
-                    'path' => '/'.ltrim($route->uri(), '/'),
-                    'source' => $source,
-                    'name' => $route->getName(),
-                    'middleware' => $middleware,
-                    'is_api' => $isApi,
-                ];
+            if ($methods === []) {
+                continue;
             }
+
+            $routes[] = $this->toRouteData($route, $methods);
         }
 
-        usort($routes, fn (array $a, array $b): int => [$a['path'], $this->methodRank($a['method'])]
-            <=> [$b['path'], $this->methodRank($b['method'])]);
+        usort($routes, fn (RouteData $a, RouteData $b): int => [$a->uri, $this->methodRank($a->methods[0])]
+            <=> [$b->uri, $this->methodRank($b->methods[0])]);
 
-        return $routes;
+        return collect($routes);
+    }
+
+    /**
+     * Routes under /api or using the "api" middleware group.
+     *
+     * @return Collection<int, RouteData>
+     */
+    public function api(): Collection
+    {
+        return $this->filter(fn (RouteData $route): bool => $route->isApi);
+    }
+
+    /**
+     * All routes that are not API routes.
+     *
+     * @return Collection<int, RouteData>
+     */
+    public function web(): Collection
+    {
+        return $this->filter(fn (RouteData $route): bool => ! $route->isApi);
+    }
+
+    /**
+     * @param  callable(RouteData): bool  $callback
+     * @return Collection<int, RouteData>
+     */
+    public function filter(callable $callback): Collection
+    {
+        return $this->all()->filter($callback)->values();
+    }
+
+    /**
+     * Get all routes in the v2 format, with one entry per HTTP method.
+     *
+     * @deprecated Use all(), api() or web() instead. Will be removed in v4.
+     *
+     * @return array{apiRoutes: Collection<int, LegacyRouteArray>, webRoutes: Collection<int, LegacyRouteArray>}
+     */
+    public function getAllRoutes(): array
+    {
+        return [
+            'apiRoutes' => $this->toLegacyFormat($this->api()),
+            'webRoutes' => $this->toLegacyFormat($this->web()),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, RouteData>  $routes
+     * @return Collection<int, LegacyRouteArray>
+     */
+    private function toLegacyFormat(Collection $routes): Collection
+    {
+        return $routes->flatMap(fn (RouteData $route): array => array_map(fn (string $method): array => [
+            'method' => $method,
+            'path' => $route->uri,
+            'source' => $route->source,
+            'name' => $route->name,
+            'middleware' => $route->middleware,
+        ], $route->methods))->values();
+    }
+
+    /**
+     * @param  list<string>  $methods
+     */
+    private function toRouteData(Route $route, array $methods): RouteData
+    {
+        $middleware = $this->getMiddleware($route);
+        $reflection = $this->reflectAction($route);
+
+        return new RouteData(
+            methods: $methods,
+            uri: '/'.ltrim($route->uri(), '/'),
+            name: $route->getName(),
+            domain: $route->getDomain(),
+            action: ltrim($route->getActionName(), '\\'),
+            source: $this->getRouteSource($route),
+            middleware: $middleware,
+            resolvedMiddleware: $this->getResolvedMiddleware($route),
+            parameters: $this->getParameters($route),
+            file: $this->relativePath($reflection?->getFileName()),
+            line: $reflection?->getStartLine() ?: null,
+            isApi: $this->isApiRoute($route, $middleware),
+            isFallback: $route->isFallback,
+        );
+    }
+
+    /**
+     * HTTP methods, without HEAD and OPTIONS, in display order.
+     *
+     * @return list<string>
+     */
+    private function getMethods(Route $route): array
+    {
+        $methods = array_values(array_filter(
+            $route->methods(),
+            fn (mixed $method): bool => is_string($method) && ! in_array($method, ['HEAD', 'OPTIONS'], true),
+        ));
+
+        usort($methods, fn (string $a, string $b): int => $this->methodRank($a) <=> $this->methodRank($b));
+
+        return $methods;
     }
 
     /**
@@ -136,6 +205,32 @@ final class RouteScopeService
     }
 
     /**
+     * @return list<string>
+     */
+    private function getResolvedMiddleware(Route $route): array
+    {
+        return array_values(array_filter($this->router->gatherRouteMiddleware($route), is_string(...)));
+    }
+
+    /**
+     * @return list<RouteParameter>
+     */
+    private function getParameters(Route $route): array
+    {
+        preg_match_all('/\{(\w+)(\?)?\}/', $route->uri(), $matches, PREG_SET_ORDER);
+
+        return array_map(function (array $match) use ($route): RouteParameter {
+            $pattern = $route->wheres[$match[1]] ?? null;
+
+            return new RouteParameter(
+                name: $match[1],
+                optional: isset($match[2]),
+                pattern: is_string($pattern) ? $pattern : null,
+            );
+        }, $matches);
+    }
+
+    /**
      * A route is an API route when it uses the "api" middleware group or lives under the /api prefix.
      *
      * @param  list<string>  $middleware
@@ -155,18 +250,56 @@ final class RouteScopeService
     }
 
     /**
+     * Reflect the controller method or closure behind a route, if it can be loaded.
+     */
+    private function reflectAction(Route $route): ?ReflectionFunctionAbstract
+    {
+        $uses = $route->getAction('uses');
+
+        if ($uses instanceof Closure) {
+            return new ReflectionFunction($uses);
+        }
+
+        if ($route->getActionName() === 'Closure') {
+            return null;
+        }
+
+        [$class, $method] = $this->splitAction($route);
+
+        // The framework's own view/redirect controllers aren't useful to point at.
+        if (in_array($class, [ViewController::class, RedirectController::class], true)) {
+            return null;
+        }
+
+        try {
+            return new ReflectionMethod($class, $method);
+        } catch (ReflectionException) {
+            return null;
+        }
+    }
+
+    private function relativePath(string|false|null $path): ?string
+    {
+        if (! is_string($path)) {
+            return null;
+        }
+
+        $base = rtrim(base_path(), '/').'/';
+
+        return str_starts_with($path, $base) ? substr($path, strlen($base)) : $path;
+    }
+
+    /**
      * Get the source (controller/action) for a route.
      */
     private function getRouteSource(Route $route): string
     {
         // Returns "Closure" for closures, including serialized closures from `route:cache`.
-        $action = $route->getActionName();
-
-        if ($action === 'Closure') {
+        if ($route->getActionName() === 'Closure') {
             return 'Closure';
         }
 
-        [$class, $method] = array_pad(explode('@', ltrim($action, '\\'), 2), 2, '__invoke');
+        [$class, $method] = $this->splitAction($route);
 
         if ($class === ViewController::class) {
             $view = $route->defaults['view'] ?? null;
@@ -181,6 +314,18 @@ final class RouteScopeService
         }
 
         return $this->getShortenedNamespace($class).'/'.class_basename($class).'::'.$method;
+    }
+
+    /**
+     * Split a controller action into its class and method, defaulting to __invoke.
+     *
+     * @return array{string, string}
+     */
+    private function splitAction(Route $route): array
+    {
+        [$class, $method] = array_pad(explode('@', ltrim($route->getActionName(), '\\'), 2), 2, '__invoke');
+
+        return [$class, $method];
     }
 
     /**

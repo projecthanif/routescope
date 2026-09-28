@@ -19,8 +19,8 @@ it('renders the dashboard in the local environment', function (): void {
     $this->get('/routescope')
         ->assertOk()
         ->assertViewIs('routescope::routescope')
-        ->assertViewHas('apiRoutes', fn (array $routes): bool => array_column($routes, 'path') === ['/api/users'])
-        ->assertViewHas('webRoutes', fn (array $routes): bool => in_array('/about', array_column($routes, 'path'), true));
+        ->assertViewHas('apiRoutes', fn (array $routes): bool => array_column($routes, 'uri') === ['/api/users'])
+        ->assertViewHas('webRoutes', fn (array $routes): bool => in_array('/about', array_column($routes, 'uri'), true));
 });
 
 it('escapes route data embedded in the page', function (): void {

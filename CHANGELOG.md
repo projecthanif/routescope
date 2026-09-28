@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+Everything below is planned for **3.0.0**. See [UPGRADE.md](UPGRADE.md).
+
+### Changed (breaking)
+- Requires PHP 8.3+ and Laravel 11, 12 or 13. Laravel 10 is no longer supported.
+- The dashboard view now receives routes as `RouteData` arrays (`uri`, `methods`, ...). Re-publish customized views.
+
+### Added
+- `RouteData` and `RouteParameter` DTOs with methods, URI, name, domain, raw action, declared and resolved middleware, parameters with `where()` constraints, source file and line, API and fallback flags.
+- `RouteScope::all()`, `api()`, `web()` and `filter()`.
+- `RouteData::hasMethod()` and `hasMiddleware()`.
+- Laravel 13 support, and CI coverage for it.
+
+### Deprecated
+- `RouteScope::getAllRoutes()`. It still returns the v2 format and will be removed in v4.
+
+### Removed
+- Tailwind Play CDN and unpkg Lucide from the dashboard. It now uses inline CSS and SVG icons, and works offline and under a strict CSP.
+
 ### Security
 - Escape route data in the dashboard to prevent XSS via route URIs, names or middleware.
 - Outside the `local` environment the dashboard now requires the `viewRouteScope` gate to pass. **If you enable RouteScope on staging, define this gate or you will get a 403.**
