@@ -21,6 +21,8 @@ Everything below is planned for **3.0.0**. See [UPGRADE.md](UPGRADE.md).
 ### Fixed
 - A published `config/routescope.php` crashed the app on boot ("Target class [env] does not exist"), and broke `config:cache`, because it called `app()->environment()` before the environment was known. `enabled` now defaults to `null`, and the service provider applies the local/development fallback.
 - `ROUTESCOPE_ENABLED` values such as `"false"` are parsed as booleans instead of being cast to `true`.
+- `resolvedMiddleware` is sorted by middleware priority, matching the order Laravel runs it in, and expands groups and aliases in console commands too (the HTTP kernel wasn't resolved there before).
+- The dashboard escapes quotes in attribute values, so a route name or source containing `"` can't add attributes.
 
 ### Deprecated
 - `RouteScope::getAllRoutes()`. It still returns the v2 format and will be removed in v4.
@@ -30,6 +32,9 @@ Everything below is planned for **3.0.0**. See [UPGRADE.md](UPGRADE.md).
 - `php artisan routescope:audit` with `--json` and `--fail-on=error|warning|never`, for use in CI. Rules: `missing-action`, `overridden-route`, `shadowed-route`, `duplicate-name` and `api-without-auth`. Configurable under `audit` (auth middleware, per-rule ignores, custom rules).
 - The dashboard shows audit issues on each route, with a header toggle to show only affected routes.
 - `RouteData::key()` and `RouteScopeService::describe()`.
+- The dashboard's route details show the full middleware execution order: global middleware first, collapsed by default, then route and controller middleware.
+- `RouteScope::globalMiddleware()`.
+- "Open in editor" links for each route's file:line, configured with `ROUTESCOPE_EDITOR` or Laravel's `app.editor` (names, custom `href` templates, and `base_path` mapping for Docker/Sail).
 
 ### Removed
 - Tailwind Play CDN and unpkg Lucide from the dashboard. It now uses inline CSS and SVG icons, and works offline and under a strict CSP.

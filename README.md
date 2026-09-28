@@ -86,6 +86,16 @@ To customize the dashboard itself, publish the views:
 php artisan vendor:publish --tag=routescope-views
 ```
 
+### Open in Editor
+
+Set `ROUTESCOPE_EDITOR` (or Laravel's own `app.editor`) and each route's file:line on the dashboard opens in your editor:
+
+```env
+ROUTESCOPE_EDITOR=phpstorm   # or vscode, cursor, zed, sublime, idea, windsurf, ...
+```
+
+`editor` also accepts Laravel's array format, e.g. `['name' => 'vscode', 'base_path' => '/Users/me/code/app']` when the app runs in Docker or Sail and your editor sees the project at a different path, or `['href' => 'myeditor://open?file={file}&line={line}']` for any other editor.
+
 ## Authorization
 
 In the `local` environment the dashboard is open. Anywhere else (e.g. staging with `ROUTESCOPE_ENABLED=true`) access is denied unless the `viewRouteScope` gate passes. Define it in a service provider:
@@ -299,13 +309,15 @@ Returns every route, sorted by URI and then by HTTP method. RouteScope's own rou
 | `action` | `string` | `App\Http\Controllers\UserController@show`, or `Closure` |
 | `source` | `string` | `http/controllers/UserController::show`, `Closure`, `View: welcome`, `Redirect: /new` |
 | `middleware` | `list<string>` | `['web', 'auth']`, as declared |
-| `resolvedMiddleware` | `list<string>` | Groups and aliases expanded to classes |
+| `resolvedMiddleware` | `list<string>` | Route and controller middleware with groups and aliases expanded, in the order Laravel runs them (sorted by middleware priority) |
 | `parameters` | `list<RouteParameter>` | `name`, `optional`, and `pattern` (from `where()` constraints) |
 | `file` / `line` | `?string` / `?int` | `app/Http/Controllers/UserController.php`, `42` (relative to the app when inside it) |
 | `isApi` | `bool` | |
 | `isFallback` | `bool` | |
 
-Methods: `hasMethod(string)`, `hasMiddleware(string)`, `toArray()` (snake_case keys), `jsonSerialize()`.
+Methods: `hasMethod(string)`, `hasMiddleware(string)`, `key()`, `toArray()` (snake_case keys), `jsonSerialize()`.
+
+`RouteScope::globalMiddleware()` returns the HTTP kernel's global middleware, which runs before every route's `resolvedMiddleware`.
 
 ### `RouteScope::getAllRoutes(): array` (deprecated)
 

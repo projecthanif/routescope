@@ -178,7 +178,7 @@
         .side { display: flex; align-items: center; gap: 12px; }
         .name { color: var(--faint); font: 12px var(--mono); white-space: nowrap; }
 
-        .actions { display: flex; justify-content: flex-end; gap: 2px; min-width: 56px; opacity: 0; transition: opacity .1s; }
+        .actions { display: flex; justify-content: flex-end; gap: 2px; min-width: 84px; opacity: 0; transition: opacity .1s; }
         .row:hover .actions, .row:focus-within .actions, .route.open .actions { opacity: 1; }
 
         .action {
@@ -201,6 +201,18 @@
         dl { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px 16px; margin: 0; font-size: 12px; }
         dt { color: var(--muted); }
         dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); }
+
+        .link { color: var(--accent); text-decoration: none; }
+        .link:hover { text-decoration: underline; }
+
+        .chain { margin: 0; padding: 0; list-style: none; counter-reset: step; }
+        .chain li { display: flex; gap: 8px; padding: 1px 0; counter-increment: step; }
+        .chain li::before { content: counter(step); width: 20px; flex-shrink: 0; color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
+        .chain .global { color: var(--muted); }
+        .chain .tag { margin-left: 6px; color: var(--faint); font-family: var(--sans); font-size: 11px; }
+        .chain-toggle { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-family: var(--sans); cursor: pointer; }
+        .chain-toggle:hover { text-decoration: underline; }
+        .chain:not(.show-global) .global { display: none; }
 
         .chip {
             display: inline-block;
@@ -275,6 +287,9 @@
         <symbol id="icon-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /><path d="M12 9v4" /><path d="M12 17h.01" />
         </symbol>
+        <symbol id="icon-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m16 18 6-6-6-6" /><path d="m8 6-6 6 6 6" />
+        </symbol>
         <symbol id="icon-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
         </symbol>
@@ -313,6 +328,8 @@
             api: @json($apiRoutes),
             web: @json($webRoutes),
         };
+        const globalMiddleware = @json($globalMiddleware);
+
         routes.all = [...routes.api, ...routes.web].sort((a, b) => a.uri.localeCompare(b.uri));
 
         const KNOWN_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
@@ -346,11 +363,11 @@
             }
         }
 
-        // Escape untrusted values before inserting them into HTML
+        // Escape untrusted values for use in HTML text and quoted attributes
         function esc(value) {
-            const div = document.createElement('div');
-            div.textContent = value ?? '';
-            return div.innerHTML;
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+            })[char]);
         }
 
         function icon(name) {
@@ -396,6 +413,25 @@
             }).join('');
         }
 
+        // Global middleware runs first, then route middleware in priority order. Global
+        // entries are the same for every route, so they start hidden behind a toggle.
+        function renderChain(routeMiddleware) {
+            if (!globalMiddleware.length && !routeMiddleware.length) {
+                return '<span class="none">None</span>';
+            }
+
+            const items = [
+                ...globalMiddleware.map(m => `<li class="global">${esc(m)}<span class="tag">global</span></li>`),
+                ...routeMiddleware.map(m => `<li>${esc(m)}</li>`),
+            ].join('');
+
+            const toggle = globalMiddleware.length
+                ? `<button type="button" class="chain-toggle" data-chain-toggle>Show ${globalMiddleware.length} global middleware</button>`
+                : '';
+
+            return `${toggle}<ol class="chain">${items}</ol>`;
+        }
+
         function renderDetails(route) {
             const location = route.file ? `${route.file}${route.line ? ':' + route.line : ''}` : null;
 
@@ -414,11 +450,13 @@
                 ${issues}
                 <dl>
                     <dt>Action</dt><dd>${esc(route.action)}</dd>
-                    ${location ? `<dt>Defined in</dt><dd>${esc(location)}</dd>` : ''}
+                    ${location ? `<dt>Defined in</dt><dd>${route.editor_url
+                        ? `<a class="link" href="${esc(route.editor_url)}" title="Open in editor">${esc(location)}</a>`
+                        : esc(location)}</dd>` : ''}
                     <dt>Name</dt><dd>${route.name ? esc(route.name) : '<span class="none">Unnamed</span>'}</dd>
                     <dt>Parameters</dt><dd>${renderParameters(route.parameters)}</dd>
                     <dt>Middleware</dt><dd>${chips(route.middleware)}</dd>
-                    <dt>Resolved middleware</dt><dd>${chips(route.resolved_middleware)}</dd>
+                    <dt>Execution order</dt><dd>${renderChain(route.resolved_middleware)}</dd>
                 </dl>
             `;
         }
@@ -551,6 +589,7 @@
                         ${route.name ? `<span class="name">${esc(route.name)}</span>` : ''}
                         <div class="actions">
                             ${canOpen(route) ? `<a class="action" href="${esc(route.uri)}" target="_blank" rel="noopener" title="Open in new tab">${icon('external')}</a>` : ''}
+                            ${route.editor_url ? `<a class="action" href="${esc(route.editor_url)}" title="Open in editor">${icon('code')}</a>` : ''}
                             <button type="button" class="action" data-copy title="Copy path">${icon('copy')}</button>
                         </div>
                     </div>
@@ -572,6 +611,14 @@
                     event.preventDefault();
                     toggle();
                 }
+            });
+
+            const chainToggle = item.querySelector('[data-chain-toggle]');
+
+            chainToggle?.addEventListener('click', () => {
+                const chain = item.querySelector('.chain');
+                const showing = chain.classList.toggle('show-global');
+                chainToggle.textContent = chainToggle.textContent.replace(/^(Show|Hide)/, showing ? 'Hide' : 'Show');
             });
 
             const copyButton = item.querySelector('[data-copy]');
