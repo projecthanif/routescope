@@ -7,6 +7,20 @@
 - PHP 8.3 or higher (was 8.1)
 - Laravel 11, 12 or 13 (Laravel 10 is no longer supported)
 
+### Published config
+
+If you published `config/routescope.php`, change the `enabled` line. The old version calls `app()` while config is loading, which crashes the app with "Target class [env] does not exist":
+
+```php
+// Before
+'enabled' => env('ROUTESCOPE_ENABLED', app()->environment('local', 'development')),
+
+// After: null means "local and development only"
+'enabled' => env('ROUTESCOPE_ENABLED'),
+```
+
+Also add the new `middleware` option, or re-publish with `php artisan vendor:publish --tag=routescope-config --force`.
+
 ### Dashboard authorization
 
 Outside the `local` environment the dashboard now requires the `viewRouteScope` gate. If you enable RouteScope on staging or elsewhere, define the gate:

@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use Illuminate\Container\Container;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Projecthanif\RouteScope\Http\Middleware\Authorize;
+use Projecthanif\RouteScope\Providers\RouteScopeProvider;
 
 function setEnvironment(string $env): void
 {
@@ -69,3 +71,43 @@ it('does not register routes when disabled', function (): void {
 
     expect(Route::getRoutes()->getByName('routescope.index'))->toBeNull();
 });
+
+it('can load the config file before the application environment is known', function (): void {
+    // Published config files are loaded before the "env" binding exists, so the file must not touch the app.
+    $app = Container::getInstance();
+    Container::setInstance(new Container);
+
+    try {
+        $config = require RouteScopeProvider::CONFIG_PATH;
+    } finally {
+        Container::setInstance($app);
+    }
+
+    expect($config['enabled'])->toBeNull();
+});
+
+it('is enabled by default only in local and development', function (string $env, bool $enabled): void {
+    config(['routescope.enabled' => null]);
+    setEnvironment($env);
+    $this->rebootPackage();
+
+    expect(Route::getRoutes()->getByName('routescope.index') !== null)->toBe($enabled);
+})->with([
+    ['local', true],
+    ['development', true],
+    ['staging', false],
+    ['production', false],
+]);
+
+it('can be forced on or off regardless of environment', function (mixed $value, string $env, bool $enabled): void {
+    config(['routescope.enabled' => $value]);
+    setEnvironment($env);
+    $this->rebootPackage();
+
+    expect(Route::getRoutes()->getByName('routescope.index') !== null)->toBe($enabled);
+})->with([
+    [true, 'production', true],
+    ['true', 'production', true],
+    [false, 'local', false],
+    ['false', 'local', false],
+]);

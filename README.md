@@ -56,8 +56,8 @@ Edit `config/routescope.php`:
 
 ```php
 return [
-    // Only enable in local/development environments
-    'enabled' => env('ROUTESCOPE_ENABLED', app()->environment('local', 'development')),
+    // null (the default) enables it in local/development only
+    'enabled' => env('ROUTESCOPE_ENABLED'),
     
     // Customize the dashboard URL
     'prefix' => env('ROUTESCOPE_PREFIX', 'routescope'),
@@ -74,6 +74,7 @@ return [
         'sanctum/csrf-cookie',
         'telescope',
         '_debugbar',
+        '_boost',
         '__execute-laravel-error-solution',
     ],
 ];

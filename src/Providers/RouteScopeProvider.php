@@ -10,9 +10,9 @@ use Projecthanif\RouteScope\Http\Middleware\Authorize;
 
 final class RouteScopeProvider extends ServiceProvider
 {
-    public const CONFIG_PATH = __DIR__.'/../../config/routescope.php';
+    public const string CONFIG_PATH = __DIR__.'/../../config/routescope.php';
 
-    public const VIEWS_PATH = __DIR__.'/../../resources/views';
+    public const string VIEWS_PATH = __DIR__.'/../../resources/views';
 
     /**
      * Register services into the container.
@@ -79,6 +79,12 @@ final class RouteScopeProvider extends ServiceProvider
      */
     private function isEnabled(): bool
     {
-        return (bool) config('routescope.enabled', app()->environment('local', 'development'));
+        $enabled = config('routescope.enabled');
+
+        if ($enabled === null) {
+            return in_array($this->app->environment(), ['local', 'development'], true);
+        }
+
+        return filter_var($enabled, FILTER_VALIDATE_BOOL);
     }
 }
