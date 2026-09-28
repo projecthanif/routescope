@@ -27,6 +27,9 @@ Everything below is planned for **3.0.0**. See [UPGRADE.md](UPGRADE.md).
 
 - Redesigned dashboard: a filterable list with All/API/Web views, routes grouped by path prefix in collapsible sections (or a flat list), expandable rows showing the action, file:line, parameters and resolved middleware, light/dark themes that follow the system, and a `/` shortcut.
 - Laravel Boost's `_boost` routes are excluded by default.
+- `php artisan routescope:audit` with `--json` and `--fail-on=error|warning|never`, for use in CI. Rules: `missing-action`, `overridden-route`, `shadowed-route`, `duplicate-name` and `api-without-auth`. Configurable under `audit` (auth middleware, per-rule ignores, custom rules).
+- The dashboard shows audit issues on each route, with a header toggle to show only affected routes.
+- `RouteData::key()` and `RouteScopeService::describe()`.
 
 ### Removed
 - Tailwind Play CDN and unpkg Lucide from the dashboard. It now uses inline CSS and SVG icons, and works offline and under a strict CSP.

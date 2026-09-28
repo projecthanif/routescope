@@ -40,23 +40,48 @@ final readonly class RouteScopeService
         $routes = [];
 
         foreach ($this->router->getRoutes()->getRoutes() as $route) {
-            if ($this->shouldSkipRoute($route)) {
-                continue;
+            $data = $this->describe($route);
+
+            if ($data instanceof RouteData) {
+                $routes[] = $data;
             }
-
-            $methods = $this->getMethods($route);
-
-            if ($methods === []) {
-                continue;
-            }
-
-            $routes[] = $this->toRouteData($route, $methods);
         }
 
         usort($routes, fn (RouteData $a, RouteData $b): int => [$a->uri, $this->methodRank($a->methods[0])]
             <=> [$b->uri, $this->methodRank($b->methods[0])]);
 
         return collect($routes);
+    }
+
+    /**
+     * Describe a single route, or return null if it is excluded or only answers HEAD/OPTIONS.
+     */
+    public function describe(Route $route): ?RouteData
+    {
+        if ($this->shouldSkipRoute($route)) {
+            return null;
+        }
+
+        $methods = $this->getMethods($route);
+
+        return $methods === [] ? null : $this->toRouteData($route, $methods);
+    }
+
+    /**
+     * HTTP methods, without HEAD and OPTIONS, in display order.
+     *
+     * @return list<string>
+     */
+    public function getMethods(Route $route): array
+    {
+        $methods = array_values(array_filter(
+            $route->methods(),
+            fn (mixed $method): bool => is_string($method) && ! in_array($method, ['HEAD', 'OPTIONS'], true),
+        ));
+
+        usort($methods, fn (string $a, string $b): int => $this->methodRank($a) <=> $this->methodRank($b));
+
+        return $methods;
     }
 
     /**
@@ -141,23 +166,6 @@ final readonly class RouteScopeService
             isApi: $this->isApiRoute($route, $middleware),
             isFallback: $route->isFallback,
         );
-    }
-
-    /**
-     * HTTP methods, without HEAD and OPTIONS, in display order.
-     *
-     * @return list<string>
-     */
-    private function getMethods(Route $route): array
-    {
-        $methods = array_values(array_filter(
-            $route->methods(),
-            fn (mixed $method): bool => is_string($method) && ! in_array($method, ['HEAD', 'OPTIONS'], true),
-        ));
-
-        usort($methods, fn (string $a, string $b): int => $this->methodRank($a) <=> $this->methodRank($b));
-
-        return $methods;
     }
 
     /**

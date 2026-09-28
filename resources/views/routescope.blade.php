@@ -22,6 +22,8 @@
             --put: #d97706;
             --patch: #7c3aed;
             --delete: #dc2626;
+            --warning: #b45309;
+            --error: #dc2626;
             --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
@@ -41,6 +43,8 @@
                 --put: #fbbf24;
                 --patch: #a78bfa;
                 --delete: #f87171;
+                --warning: #fbbf24;
+                --error: #f87171;
             }
         }
 
@@ -174,7 +178,7 @@
         .side { display: flex; align-items: center; gap: 12px; }
         .name { color: var(--faint); font: 12px var(--mono); white-space: nowrap; }
 
-        .actions { display: flex; gap: 2px; opacity: 0; transition: opacity .1s; }
+        .actions { display: flex; justify-content: flex-end; gap: 2px; min-width: 56px; opacity: 0; transition: opacity .1s; }
         .row:hover .actions, .row:focus-within .actions, .route.open .actions { opacity: 1; }
 
         .action {
@@ -208,6 +212,38 @@
         }
 
         .none { color: var(--faint); }
+
+        .header-side { display: flex; align-items: center; gap: 12px; }
+
+        .issues-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 10px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--warning);
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .issues-toggle.has-errors { color: var(--error); }
+        .issues-toggle:hover { border-color: currentColor; }
+        .issues-toggle[aria-pressed="true"] { border-color: currentColor; background: color-mix(in srgb, currentColor 10%, transparent); }
+        .issues-toggle .icon { width: 12px; height: 12px; }
+
+        .flag { display: inline-flex; color: var(--warning); }
+        .flag.error { color: var(--error); }
+        .flag .icon { width: 14px; height: 14px; }
+
+        .issues { margin: 0 0 12px; padding: 0; list-style: none; font-size: 12px; }
+        .issues li { display: flex; gap: 8px; padding: 6px 0; }
+        .issues li + li { border-top: 1px dashed var(--line); }
+        .issues .severity { flex-shrink: 0; width: 56px; color: var(--warning); font: 600 11px/18px var(--mono); text-transform: uppercase; }
+        .issues .severity.error { color: var(--error); }
+        .issues .rule { margin-left: 6px; color: var(--faint); font-family: var(--mono); }
         .empty { padding: 48px 16px; color: var(--muted); text-align: center; }
 
         @media (max-width: 640px) {
@@ -236,6 +272,9 @@
         <symbol id="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="m6 9 6 6 6-6" />
         </symbol>
+        <symbol id="icon-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /><path d="M12 9v4" /><path d="M12 17h.01" />
+        </symbol>
         <symbol id="icon-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
         </symbol>
@@ -244,7 +283,10 @@
     <div class="page">
         <header>
             <h1>RouteScope</h1>
-            <span class="summary" id="summary"></span>
+            <div class="header-side">
+                <span class="summary" id="summary"></span>
+                <button type="button" class="issues-toggle" id="issues-toggle" aria-pressed="false" hidden></button>
+            </div>
         </header>
 
         <div class="toolbar">
@@ -284,6 +326,8 @@
         const collapsed = new Set();
 
         let view = 'all';
+        let issuesOnly = false;
+        const issuesToggle = document.getElementById('issues-toggle');
         let layout = readPreference('routescope.layout', 'grouped');
 
         function readPreference(key, fallback) {
@@ -355,7 +399,19 @@
         function renderDetails(route) {
             const location = route.file ? `${route.file}${route.line ? ':' + route.line : ''}` : null;
 
+            const issues = route.issues.length ? `
+                <ul class="issues">
+                    ${route.issues.map(issue => `
+                        <li>
+                            <span class="severity ${issue.severity}">${esc(issue.severity)}</span>
+                            <span>${esc(issue.message)}<span class="rule">${esc(issue.rule)}</span></span>
+                        </li>
+                    `).join('')}
+                </ul>
+            ` : '';
+
             return `
+                ${issues}
                 <dl>
                     <dt>Action</dt><dd>${esc(route.action)}</dd>
                     ${location ? `<dt>Defined in</dt><dd>${esc(location)}</dd>` : ''}
@@ -365,6 +421,24 @@
                     <dt>Resolved middleware</dt><dd>${chips(route.resolved_middleware)}</dd>
                 </dl>
             `;
+        }
+
+        function hasErrors(issues) {
+            return issues.some(issue => issue.severity === 'error');
+        }
+
+        function plural(count, word) {
+            return `${count} ${word}${count === 1 ? '' : 's'}`;
+        }
+
+        function renderFlag(issues) {
+            if (!issues.length) {
+                return '';
+            }
+
+            const title = issues.map(issue => issue.message).join('\n');
+
+            return `<span class="flag ${hasErrors(issues) ? 'error' : ''}" title="${esc(title)}" aria-label="${esc(plural(issues.length, 'issue'))}">${icon('alert')}</span>`;
         }
 
         // Only GET routes without parameters can be opened directly
@@ -473,6 +547,7 @@
                         <div class="meta">${renderMeta(route)}</div>
                     </div>
                     <div class="side">
+                        ${renderFlag(route.issues)}
                         ${route.name ? `<span class="name">${esc(route.name)}</span>` : ''}
                         <div class="actions">
                             ${canOpen(route) ? `<a class="action" href="${esc(route.uri)}" target="_blank" rel="noopener" title="Open in new tab">${icon('external')}</a>` : ''}
@@ -507,9 +582,10 @@
 
         function render() {
             const query = search.value.trim().toLowerCase();
-            const visible = routes[view].filter(route => matches(route, query));
+            const visible = routes[view].filter(route => matches(route, query) && (!issuesOnly || route.issues.length));
+            const filtering = query !== '' || issuesOnly;
 
-            summary.textContent = query
+            summary.textContent = filtering
                 ? `${visible.length} of ${routes[view].length} routes`
                 : `${routes.all.length} routes`;
 
@@ -520,14 +596,35 @@
                     .map(([key, groupRoutes]) => [key, groupRoutes.filter(route => shown.has(route))])
                     .filter(([, groupRoutes]) => groupRoutes.length);
 
-                list.replaceChildren(...groups.map(([key, groupRoutes]) => renderGroup(key, groupRoutes, query !== '')));
+                list.replaceChildren(...groups.map(([key, groupRoutes]) => renderGroup(key, groupRoutes, filtering)));
             } else {
                 list.replaceChildren(...visible.map(route => renderRoute(route)));
             }
 
             if (!visible.length) {
-                list.innerHTML = `<div class="empty">${query ? 'No routes match your filter' : 'No routes'}</div>`;
+                list.innerHTML = `<div class="empty">${filtering ? 'No routes match your filter' : 'No routes'}</div>`;
             }
+        }
+
+        // Issue summary; clicking it shows only routes with issues
+        const allIssues = routes.all.flatMap(route => route.issues);
+
+        if (allIssues.length) {
+            const errors = allIssues.filter(issue => issue.severity === 'error').length;
+            const warnings = allIssues.length - errors;
+
+            issuesToggle.hidden = false;
+            issuesToggle.classList.toggle('has-errors', errors > 0);
+            issuesToggle.innerHTML = icon('alert') + esc([
+                errors ? plural(errors, 'error') : '',
+                warnings ? plural(warnings, 'warning') : '',
+            ].filter(Boolean).join(', '));
+
+            issuesToggle.addEventListener('click', () => {
+                issuesOnly = !issuesOnly;
+                issuesToggle.setAttribute('aria-pressed', String(issuesOnly));
+                render();
+            });
         }
 
         document.querySelectorAll('[data-count]').forEach(el => {
