@@ -61,16 +61,40 @@ return [
     
     // Customize the dashboard URL
     'prefix' => env('ROUTESCOPE_PREFIX', 'routescope'),
-    
-    // Hide routes you don't want to see (debug tools, internal routes, etc.)
+
+    // Middleware applied to the dashboard
+    'middleware' => ['web'],
+
+    // Hide routes you don't want to see (debug tools, internal routes, etc.).
+    // A pattern hides the path and everything beneath it ("telescope" hides
+    // "telescope/requests" but not "telescopes") and supports `*` wildcards.
+    // RouteScope's own routes are always hidden.
     'excluded_patterns' => [
-        'routescope',
         '_ignition',
         'sanctum/csrf-cookie',
         'telescope',
-        'horizon',
+        '_debugbar',
+        '__execute-laravel-error-solution',
     ],
 ];
+```
+
+To customize the dashboard itself, publish the views:
+
+```bash
+php artisan vendor:publish --tag=routescope-views
+```
+
+## Authorization
+
+In the `local` environment the dashboard is open. Anywhere else (e.g. staging with `ROUTESCOPE_ENABLED=true`) access is denied unless the `viewRouteScope` gate passes. Define it in a service provider:
+
+```php
+use Illuminate\Support\Facades\Gate;
+
+Gate::define('viewRouteScope', function ($user = null) {
+    return in_array($user?->email, ['admin@example.com'], true);
+});
 ```
 
 ## Features
@@ -80,8 +104,9 @@ A beautiful, responsive interface that displays:
 - HTTP methods (GET, POST, PUT, DELETE, PATCH)
 - Route URIs and named routes
 - Controller actions or closure definitions
-- Applied middleware chains
-- Quick search and filtering
+- Applied middleware
+- Search across path, method, name, middleware and source
+- Copy a path, or open parameter-free GET routes in a new tab
 
 ### 🔌 Programmatic Access
 Query routes from your code using the facade or dependency injection:
@@ -93,14 +118,14 @@ $routes = RouteScope::getAllRoutes();
 
 // Returns:
 [
-    'apiRoutes' => [...],  // All /api/* routes
-    'webRoutes' => [...]   // All other routes
+    'apiRoutes' => Collection,  // Routes under /api or using the "api" middleware group
+    'webRoutes' => Collection,  // All other routes
 ]
 ```
 
 ### 🎨 Smart Categorization
 Routes are automatically organized:
-- **API Routes**: Everything under `/api/*`
+- **API Routes**: Everything under `/api` or using the `api` middleware group
 - **Web Routes**: Your standard web application routes
 
 ### ⚙️ Flexible Filtering
@@ -194,7 +219,7 @@ class RouteAnalysisController extends Controller
 
 ### `RouteScope::getAllRoutes(): array`
 
-Returns all routes organized into API and Web categories.
+Returns all routes organized into API and Web categories, as collections sorted by path and then method. `HEAD` and `OPTIONS` are omitted.
 
 **Response Structure:**
 
@@ -205,7 +230,7 @@ Returns all routes organized into API and Web categories.
             'method' => 'GET|POST|PUT|DELETE|PATCH',
             'path' => '/api/users',
             'name' => 'users.index',  // or null if unnamed
-            'source' => 'App\Http\Controllers\UserController::index',
+            'source' => 'http/controllers/UserController::index',  // or "Closure", "View: welcome", "Redirect: /new"
             'middleware' => ['api', 'auth:sanctum'],
         ],
         // ... more routes
@@ -215,7 +240,7 @@ Returns all routes organized into API and Web categories.
             'method' => 'GET',
             'path' => '/dashboard',
             'name' => 'dashboard',
-            'source' => 'App\Http\Controllers\DashboardController::show',
+            'source' => 'http/controllers/DashboardController::show',
             'middleware' => ['web', 'auth'],
         ],
         // ... more routes
@@ -238,9 +263,10 @@ ROUTESCOPE_PREFIX=routescope
 RouteScope is designed to be safe by default:
 
 1. **Auto-disabled in production** - The default configuration only enables RouteScope in local/development environments
-2. **Dev dependency** - Install with `--dev` to exclude from production builds
-3. **Lightweight** - Zero runtime overhead when disabled
-4. **No database** - Purely reads from Laravel's route collection
+2. **Gated outside local** - When enabled elsewhere, the `viewRouteScope` gate must pass (see [Authorization](#authorization))
+3. **Dev dependency** - Install with `--dev` to exclude from production builds
+4. **Lightweight** - Zero runtime overhead when disabled
+5. **No database** - Purely reads from Laravel's route collection
 
 To ensure it's disabled in production, add to `.env.production`:
 

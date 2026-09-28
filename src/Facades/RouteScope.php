@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Facade;
 use Projecthanif\RouteScope\Services\RouteScopeService;
 
 /**
- * @method static array getAllRoutes()
+ * @method static array{apiRoutes: \Illuminate\Support\Collection<int, array{method: string, path: string, source: string, name: string|null, middleware: list<string>}>, webRoutes: \Illuminate\Support\Collection<int, array{method: string, path: string, source: string, name: string|null, middleware: list<string>}>} getAllRoutes()
  *
  * @see RouteScopeService
  */
