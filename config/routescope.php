@@ -11,7 +11,20 @@ return [
     |
     */
 
-    'enabled' => env('ROUTESCOPE_ENABLED', app()->environment('local', 'development')),
+    /*
+    |--------------------------------------------------------------------------
+    | Enabled
+    |--------------------------------------------------------------------------
+    |
+    | When null (the default), RouteScope is enabled in the "local" and
+    | "development" environments only. Set ROUTESCOPE_ENABLED to force it.
+    |
+    | Don't call app() here: published config files are loaded before the
+    | application environment is known.
+    |
+    */
+
+    'enabled' => env('ROUTESCOPE_ENABLED'),
 
     'prefix' => env('ROUTESCOPE_PREFIX', 'routescope'),
 
@@ -45,6 +58,7 @@ return [
         'sanctum/csrf-cookie',
         'telescope',
         '_debugbar',
+        '_boost',
         '__execute-laravel-error-solution',
     ],
 ];

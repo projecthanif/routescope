@@ -17,9 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Pest 4 requires PHP 8.3+ and PHPUnit 12, which rules out Laravel 10 (Testbench 8).
         php: ['8.3', '8.4']
-        laravel: ['11.*', '12.*']
+        laravel: ['11.*', '12.*', '13.*']
         include:
           # Laravel 11 no longer receives security fixes, so every 11.x release has open
           # advisories and Composer refuses to install it. Allow it here so we still verify
@@ -29,6 +28,8 @@ jobs:
             allow-insecure: true
           - laravel: '12.*'
             testbench: '10.*'
+          - laravel: '13.*'
+            testbench: '11.*'
 
     steps:
       - uses: actions/checkout@v5

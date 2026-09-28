@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+Everything below is planned for **3.0.0**. See [UPGRADE.md](UPGRADE.md).
+
+### Changed (breaking)
+- Requires PHP 8.3+ and Laravel 11, 12 or 13. Laravel 10 is no longer supported.
+- The dashboard view now receives routes as `RouteData` arrays (`uri`, `methods`, ...). Re-publish customized views.
+
+### Added
+- `RouteData` and `RouteParameter` DTOs with methods, URI, name, domain, raw action, declared and resolved middleware, parameters with `where()` constraints, source file and line, API and fallback flags.
+- `RouteScope::all()`, `api()`, `web()` and `filter()`.
+- `RouteData::hasMethod()` and `hasMiddleware()`.
+- Laravel 13 support, and CI coverage for it.
+
+### Fixed
+- A published `config/routescope.php` crashed the app on boot ("Target class [env] does not exist"), and broke `config:cache`, because it called `app()->environment()` before the environment was known. `enabled` now defaults to `null`, and the service provider applies the local/development fallback.
+- `ROUTESCOPE_ENABLED` values such as `"false"` are parsed as booleans instead of being cast to `true`.
+
+### Deprecated
+- `RouteScope::getAllRoutes()`. It still returns the v2 format and will be removed in v4.
+
+- Redesigned dashboard: a filterable list with All/API/Web views, routes grouped by path prefix in collapsible sections (or a flat list), expandable rows showing the action, file:line, parameters and resolved middleware, light/dark themes that follow the system, and a `/` shortcut.
+- Laravel Boost's `_boost` routes are excluded by default.
+
+### Removed
+- Tailwind Play CDN and unpkg Lucide from the dashboard. It now uses inline CSS and SVG icons, and works offline and under a strict CSP.
+
 ### Security
 - Escape route data in the dashboard to prevent XSS via route URIs, names or middleware.
 - Outside the `local` environment the dashboard now requires the `viewRouteScope` gate to pass. **If you enable RouteScope on staging, define this gate or you will get a 403.**

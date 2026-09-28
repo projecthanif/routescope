@@ -6,17 +6,18 @@ namespace Projecthanif\RouteScope\Controllers;
 
 use Illuminate\Contracts\View\View;
 use Illuminate\Routing\Controller;
-use Projecthanif\RouteScope\Facades\RouteScope;
+use Projecthanif\RouteScope\Data\RouteData;
+use Projecthanif\RouteScope\Services\RouteScopeService;
 
 final class RouteScopeController extends Controller
 {
-    public function index(): View
+    public function index(RouteScopeService $routeScope): View
     {
-        $routes = RouteScope::getAllRoutes();
+        $toArray = fn (RouteData $route): array => $route->toArray();
 
         return view('routescope::routescope', [
-            'apiRoutes' => $routes['apiRoutes']->all(),
-            'webRoutes' => $routes['webRoutes']->all(),
+            'apiRoutes' => $routeScope->api()->map($toArray)->all(),
+            'webRoutes' => $routeScope->web()->map($toArray)->all(),
         ]);
     }
 }

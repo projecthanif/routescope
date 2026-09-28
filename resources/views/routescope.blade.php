@@ -4,298 +4,570 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>RouteScope</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        /* Custom scrollbar for a cleaner look */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+        :root {
+            --bg: #fafafa;
+            --surface: #fff;
+            --hover: #f4f4f5;
+            --line: #e4e4e7;
+            --text: #18181b;
+            --muted: #71717a;
+            --faint: #a1a1aa;
+            --accent: #2563eb;
+            --get: #2563eb;
+            --post: #16a34a;
+            --put: #d97706;
+            --patch: #7c3aed;
+            --delete: #dc2626;
+            --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
 
-        ::-webkit-scrollbar-track {
-            background: #000;
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #09090b;
+                --surface: #0f0f11;
+                --hover: #18181b;
+                --line: #27272a;
+                --text: #f4f4f5;
+                --muted: #a1a1aa;
+                --faint: #52525b;
+                --accent: #60a5fa;
+                --get: #60a5fa;
+                --post: #4ade80;
+                --put: #fbbf24;
+                --patch: #a78bfa;
+                --delete: #f87171;
+            }
         }
 
-        ::-webkit-scrollbar-thumb {
-            background: #333;
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font: 14px/1.5 var(--sans);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .page { max-width: 1040px; margin: 0 auto; padding: 48px 24px 64px; }
+
+        header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+        h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+        .summary { color: var(--muted); font-size: 13px; }
+
+        .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
+
+        .search { position: relative; flex: 1; }
+
+        .search input {
+            width: 100%;
+            height: 36px;
+            padding: 0 40px 0 12px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: var(--text);
+            font: inherit;
+        }
+
+        .search input::placeholder { color: var(--faint); }
+        .search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
+
+        kbd {
+            position: absolute;
+            top: 50%;
+            right: 10px;
+            transform: translateY(-50%);
+            padding: 0 6px;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            color: var(--faint);
+            font: 11px/18px var(--mono);
+        }
+
+        .search input:focus + kbd { display: none; }
+
+        .segmented { display: flex; padding: 3px; background: var(--hover); border-radius: 8px; }
+
+        .segmented button {
+            height: 30px;
+            padding: 0 12px;
+            border: 0;
+            border-radius: 6px;
+            background: none;
+            color: var(--muted);
+            font: inherit;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .segmented button:hover { color: var(--text); }
+        .segmented button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+        .segmented .n { margin-left: 6px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+        .list { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+
+        .route + .route { border-top: 1px solid var(--line); }
+        .group + .group { border-top: 1px solid var(--line); }
+
+        .group-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 10px 16px;
+            border: 0;
+            border-bottom: 1px solid var(--line);
+            background: var(--bg);
+            color: var(--text);
+            font: 600 12px var(--mono);
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .group-head:hover { background: var(--hover); }
+        .group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+        .group-head .count { color: var(--faint); font: 400 12px var(--sans); font-variant-numeric: tabular-nums; }
+        .chevron { width: 12px; height: 12px; color: var(--faint); transition: transform .15s; }
+        .group.collapsed .chevron { transform: rotate(-90deg); }
+        .group.collapsed .group-head { border-bottom: 0; }
+        .group.collapsed .group-body { display: none; }
+        .path .prefix { color: var(--faint); }
+
+        .row {
+            display: grid;
+            grid-template-columns: 72px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 16px;
+            width: 100%;
+            padding: 12px 16px;
+            border: 0;
+            background: none;
+            color: inherit;
+            font: inherit;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .row:hover, .route.open .row { background: var(--hover); }
+        .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+        .methods { display: flex; flex-direction: column; gap: 2px; font: 600 11px/1.4 var(--mono); letter-spacing: .02em; }
+        .m-GET { color: var(--get); }
+        .m-POST { color: var(--post); }
+        .m-PUT { color: var(--put); }
+        .m-PATCH { color: var(--patch); }
+        .m-DELETE { color: var(--delete); }
+        .m-other { color: var(--muted); }
+
+        .main { min-width: 0; }
+        .path { overflow: hidden; font: 13px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+        .path .param { color: var(--accent); }
+        .meta { overflow: hidden; margin-top: 2px; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+        .meta .sep { margin: 0 6px; color: var(--faint); }
+
+        .side { display: flex; align-items: center; gap: 12px; }
+        .name { color: var(--faint); font: 12px var(--mono); white-space: nowrap; }
+
+        .actions { display: flex; gap: 2px; opacity: 0; transition: opacity .1s; }
+        .row:hover .actions, .row:focus-within .actions, .route.open .actions { opacity: 1; }
+
+        .action {
+            display: inline-flex;
+            padding: 6px;
+            border: 0;
+            border-radius: 6px;
+            background: none;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .action:hover { background: var(--line); color: var(--text); }
+        .action.done { color: var(--post); }
+        .icon { width: 14px; height: 14px; }
+
+        .details { display: none; padding: 4px 16px 16px 104px; background: var(--hover); }
+        .route.open .details { display: block; }
+
+        dl { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px 16px; margin: 0; font-size: 12px; }
+        dt { color: var(--muted); }
+        dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); }
+
+        .chip {
+            display: inline-block;
+            margin: 0 4px 4px 0;
+            padding: 1px 6px;
+            background: var(--surface);
+            border: 1px solid var(--line);
             border-radius: 4px;
         }
 
-        ::-webkit-scrollbar-thumb:hover {
-            background: #444;
-        }
+        .none { color: var(--faint); }
+        .empty { padding: 48px 16px; color: var(--muted); text-align: center; }
 
-        body {
-            background-color: #000000;
-            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        @media (max-width: 640px) {
+            .page { padding: 24px 16px 48px; }
+            header { flex-direction: column; gap: 4px; }
+            .toolbar { flex-wrap: wrap; gap: 8px; }
+            .search { flex-basis: 100%; }
+            .row { grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; padding: 12px; }
+            .name { display: none; }
+            .actions { opacity: 1; }
+            .details { padding: 4px 12px 16px; }
+            dl { grid-template-columns: 1fr; gap: 2px; }
+            dd { margin-bottom: 8px; }
         }
     </style>
-
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        dark: '#050505',
-                        card: '#0A0A0A',
-                        border: '#1F1F1F',
-                        'post-text': '#4ade80',
-                        'post-bg': 'rgba(74, 222, 128, 0.1)',
-                        'post-border': 'rgba(74, 222, 128, 0.2)',
-                        'get-text': '#60a5fa',
-                        'get-bg': 'rgba(96, 165, 250, 0.1)',
-                        'get-border': 'rgba(96, 165, 250, 0.2)',
-                        'put-text': '#f59e0b',
-                        'put-bg': 'rgba(245, 158, 11, 0.1)',
-                        'put-border': 'rgba(245, 158, 11, 0.2)',
-                        'delete-text': '#ef4444',
-                        'delete-bg': 'rgba(239, 68, 68, 0.1)',
-                        'delete-border': 'rgba(239, 68, 68, 0.2)',
-                        'patch-text': '#a78bfa',
-                        'patch-bg': 'rgba(167, 139, 250, 0.1)',
-                        'patch-border': 'rgba(167, 139, 250, 0.2)',
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 
-<body class="text-gray-300 p-8 min-h-screen">
+<body>
+    <svg xmlns="http://www.w3.org/2000/svg" style="display: none">
+        <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="14" height="14" x="8" y="8" rx="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+        </symbol>
+        <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 6 9 17l-5-5" />
+        </symbol>
+        <symbol id="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m6 9 6 6 6-6" />
+        </symbol>
+        <symbol id="icon-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+        </symbol>
+    </svg>
 
-    <div class="flex justify-center mb-8">
-        <div class="bg-[#111] border border-gray-800 rounded-full p-1 flex items-center text-sm font-medium">
-            <button id="api-tab"
-                class="px-4 py-1.5 rounded-full bg-[#1A1A1A] text-white border border-gray-700 shadow-sm transition-all">
-                API Routes
-            </button>
-            <button id="page-tab" class="px-4 py-1.5 rounded-full text-gray-500 hover:text-gray-300 transition-all">
-                Web Routes
-            </button>
-        </div>
-    </div>
+    <div class="page">
+        <header>
+            <h1>RouteScope</h1>
+            <span class="summary" id="summary"></span>
+        </header>
 
-    <div class="max-w-6xl mx-auto border border-border rounded-xl bg-card overflow-hidden">
-
-        <div class="p-6 pb-2">
-            <div class="flex items-center gap-3 mb-1">
-                <h1 id="route-title" class="text-2xl font-bold text-white tracking-tight">API Routes</h1>
-                <span id="route-count"
-                    class="bg-[#1F1F1F] text-gray-400 text-xs px-2 py-0.5 rounded-full border border-gray-800">{{ count($apiRoutes) }}</span>
+        <div class="toolbar">
+            <div class="search">
+                <input id="search" type="search" placeholder="Filter routes" autocomplete="off" spellcheck="false" aria-label="Filter routes">
+                <kbd>/</kbd>
             </div>
-            <p class="text-gray-500 text-sm">Manage and inspect your API endpoints</p>
-        </div>
-
-        <div class="px-6 py-4 flex items-center justify-between">
-            <div class="relative w-full max-w-sm group">
-                <i data-lucide="search"
-                    class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-gray-300 transition-colors"></i>
-                <input id="search-input" type="text" placeholder="Search path, name, middleware..."
-                    class="w-full bg-[#050505] border border-border rounded-lg py-2 pl-10 pr-4 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-gray-600 transition-colors">
+            <div class="segmented" role="group" aria-label="Route type">
+                <button type="button" data-view="all" aria-pressed="true">All<span class="n" data-count="all"></span></button>
+                <button type="button" data-view="api" aria-pressed="false">API<span class="n" data-count="api"></span></button>
+                <button type="button" data-view="web" aria-pressed="false">Web<span class="n" data-count="web"></span></button>
+            </div>
+            <div class="segmented" role="group" aria-label="Layout">
+                <button type="button" data-layout="grouped" aria-pressed="true">Grouped</button>
+                <button type="button" data-layout="flat" aria-pressed="false">Flat</button>
             </div>
         </div>
 
-        <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
-                <thead>
-                    <tr class="border-b border-border text-xs uppercase text-gray-500 font-medium">
-                        <th class="px-6 py-3 w-24">Methods</th>
-                        <th class="px-6 py-3">Path <i data-lucide="arrow-up"
-                                class="inline w-3 h-3 ml-1 align-middle"></i></th>
-                        <th class="px-6 py-3">Middleware</th>
-                        <th class="px-6 py-3">Source</th>
-                        <th class="px-6 py-3 w-32 text-right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="routes-table-body" class="text-sm">
-                </tbody>
-            </table>
-        </div>
-
-        <div class="h-4"></div>
+        <div class="list" id="list"></div>
     </div>
 
     <script>
-        // Data from Laravel controller
-        const apiRoutes = @json($apiRoutes);
-        const pageRoutes = @json($webRoutes);
+        const routes = {
+            api: @json($apiRoutes),
+            web: @json($webRoutes),
+        };
+        routes.all = [...routes.api, ...routes.web].sort((a, b) => a.uri.localeCompare(b.uri));
 
-        let currentRoutes = apiRoutes;
-        let currentView = 'api';
+        const KNOWN_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
-        const tableBody = document.getElementById('routes-table-body');
-        const searchInput = document.getElementById('search-input');
-        const apiTab = document.getElementById('api-tab');
-        const pageTab = document.getElementById('page-tab');
-        const routeTitle = document.getElementById('route-title');
-        const routeCount = document.getElementById('route-count');
+        const list = document.getElementById('list');
+        const search = document.getElementById('search');
+        const summary = document.getElementById('summary');
+        const viewButtons = document.querySelectorAll('[data-view]');
 
-        // Method badge colors
-        function getMethodBadgeClass(method) {
-            const classes = {
-                'POST': 'text-post-text bg-post-bg border-post-border',
-                'GET': 'text-get-text bg-get-bg border-get-border',
-                'PUT': 'text-put-text bg-put-bg border-put-border',
-                'PATCH': 'text-patch-text bg-patch-bg border-patch-border',
-                'DELETE': 'text-delete-text bg-delete-bg border-delete-border',
-            };
-            return classes[method] || 'text-gray-400 bg-gray-800/40 border-gray-700';
+        const layoutButtons = document.querySelectorAll('[data-layout]');
+        const collapsed = new Set();
+
+        let view = 'all';
+        let layout = readPreference('routescope.layout', 'grouped');
+
+        function readPreference(key, fallback) {
+            try {
+                return localStorage.getItem(key) ?? fallback;
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        function writePreference(key, value) {
+            try {
+                localStorage.setItem(key, value);
+            } catch (e) {
+                // Storage can be unavailable (private mode, blocked site data); the default is fine.
+            }
         }
 
         // Escape untrusted values before inserting them into HTML
-        function escapeHtml(value) {
+        function esc(value) {
             const div = document.createElement('div');
             div.textContent = value ?? '';
             return div.innerHTML;
         }
 
-        // Get file extension badge
-        function getFileExtensionBadge(source) {
-            if (source === 'Closure') {
-                return '<div class="w-4 h-4 bg-purple-900/40 border border-purple-500/30 rounded-[3px] flex items-center justify-center"><span class="text-[8px] font-bold text-purple-400">λ</span></div>';
-            }
-
-            if (source.includes('::')) {
-                return '<div class="w-4 h-4 bg-indigo-900/40 border border-indigo-500/30 rounded-[3px] flex items-center justify-center"><span class="text-[8px] font-bold text-indigo-400">PHP</span></div>';
-            }
-
-            return '<div class="w-4 h-4 bg-gray-800/40 border border-gray-600/30 rounded-[3px] flex items-center justify-center"><span class="text-[8px] font-bold text-gray-400">•</span></div>';
+        function icon(name) {
+            return `<svg class="icon" aria-hidden="true"><use href="#icon-${name}" /></svg>`;
         }
 
-        function renderMiddleware(middleware) {
-            if (!middleware.length) {
-                return '<span class="text-gray-700">—</span>';
+        function chips(values) {
+            return values.length
+                ? values.map(v => `<span class="chip">${esc(v)}</span>`).join('')
+                : '<span class="none">None</span>';
+        }
+
+        // Highlight {parameters} in the path
+        function renderPath(uri, prefix = '') {
+            const highlight = text => esc(text).replace(/\{[^}]+\}/g, match => `<span class="param">${match}</span>`);
+            const dimmed = prefix.length > 1 && uri.startsWith(prefix) ? prefix : '';
+
+            return (dimmed ? `<span class="prefix">${highlight(dimmed)}</span>` : '') + highlight(uri.slice(dimmed.length));
+        }
+
+        function renderMeta(route) {
+            const parts = [esc(route.source)];
+
+            if (route.middleware.length) {
+                parts.push(esc(route.middleware.join(', ')));
             }
 
-            return middleware.map(m =>
-                `<span class="inline-block text-[10px] font-mono px-1.5 py-0.5 mr-1 mb-1 rounded border border-gray-800 bg-[#111] text-gray-400">${escapeHtml(m)}</span>`
-            ).join('');
+            if (route.domain) {
+                parts.push(esc(route.domain));
+            }
+
+            return parts.join('<span class="sep">·</span>');
+        }
+
+        function renderParameters(parameters) {
+            if (!parameters.length) {
+                return '<span class="none">None</span>';
+            }
+
+            return parameters.map(p => {
+                const label = p.name + (p.optional ? '?' : '') + (p.pattern ? ` = ${p.pattern}` : '');
+                return `<span class="chip">${esc(label)}</span>`;
+            }).join('');
+        }
+
+        function renderDetails(route) {
+            const location = route.file ? `${route.file}${route.line ? ':' + route.line : ''}` : null;
+
+            return `
+                <dl>
+                    <dt>Action</dt><dd>${esc(route.action)}</dd>
+                    ${location ? `<dt>Defined in</dt><dd>${esc(location)}</dd>` : ''}
+                    <dt>Name</dt><dd>${route.name ? esc(route.name) : '<span class="none">Unnamed</span>'}</dd>
+                    <dt>Parameters</dt><dd>${renderParameters(route.parameters)}</dd>
+                    <dt>Middleware</dt><dd>${chips(route.middleware)}</dd>
+                    <dt>Resolved middleware</dt><dd>${chips(route.resolved_middleware)}</dd>
+                </dl>
+            `;
         }
 
         // Only GET routes without parameters can be opened directly
         function canOpen(route) {
-            return route.method === 'GET' && !route.path.includes('{');
+            return route.methods.includes('GET') && route.parameters.length === 0;
         }
 
-        async function copyToClipboard(text, button) {
+        async function copy(text, button) {
             try {
                 await navigator.clipboard.writeText(text);
-                button.classList.add('text-green-400');
-                setTimeout(() => button.classList.remove('text-green-400'), 1000);
+                button.classList.add('done');
+                button.innerHTML = icon('check');
+                setTimeout(() => {
+                    button.classList.remove('done');
+                    button.innerHTML = icon('copy');
+                }, 1200);
             } catch (e) {
                 window.prompt('Copy path:', text);
             }
         }
 
-        // Render routes
-        function renderRoutes(routes) {
-            tableBody.innerHTML = '';
-
-            if (routes.length === 0) {
-                tableBody.innerHTML = `
-                    <tr>
-                        <td colspan="5" class="px-6 py-8 text-center text-gray-500">
-                            No routes found
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            routes.forEach(route => {
-                const tr = document.createElement('tr');
-                tr.className =
-                    'border-b border-border hover:bg-[#111] transition-colors group cursor-default last:border-0 align-top';
-
-                // Path highlighting (last segment white, rest gray)
-                const pathParts = route.path.split('/');
-                const lastPart = pathParts.pop();
-                const prefix = pathParts.join('/') + '/';
-
-                tr.innerHTML = `
-                    <td class="px-6 py-4">
-                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${getMethodBadgeClass(route.method)}">
-                            ${escapeHtml(route.method)}
-                        </span>
-                    </td>
-                    <td class="px-6 py-4 font-mono text-gray-500">
-                        ${escapeHtml(prefix)}<span class="text-white font-medium">${escapeHtml(lastPart)}</span>
-                        ${route.name ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(route.name)}</div>` : ''}
-                    </td>
-                    <td class="px-6 py-4">${renderMiddleware(route.middleware)}</td>
-                    <td class="px-6 py-4 text-gray-500">
-                        <div class="flex items-center gap-2">
-                            ${getFileExtensionBadge(route.source)}
-                            <span class="truncate max-w-[300px]" title="${escapeHtml(route.source)}">${escapeHtml(route.source)}</span>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4 text-right">
-                        <div class="flex items-center justify-end gap-3 text-gray-500">
-                            ${canOpen(route)
-                                ? `<a href="${escapeHtml(route.path)}" target="_blank" rel="noopener" class="hover:text-white transition-colors" title="Open in new tab"><i data-lucide="external-link" class="w-4 h-4"></i></a>`
-                                : ''}
-                            <button data-copy class="hover:text-blue-400 transition-colors" title="Copy path"><i data-lucide="copy" class="w-4 h-4"></i></button>
-                        </div>
-                    </td>
-                `;
-                const copyButton = tr.querySelector('[data-copy]');
-                copyButton.addEventListener('click', () => copyToClipboard(route.path, copyButton));
-                tableBody.appendChild(tr);
-            });
-
-            // Re-initialize Lucide icons
-            lucide.createIcons();
+        function matches(route, query) {
+            return [route.uri, route.source, route.action, route.name ?? '', ...route.methods, ...route.middleware]
+                .some(value => value.toLowerCase().includes(query));
         }
 
-        // Search functionality
-        searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.toLowerCase();
-            const filtered = currentRoutes.filter(route => {
-                return route.path.toLowerCase().includes(query) ||
-                    route.method.toLowerCase().includes(query) ||
-                    route.source.toLowerCase().includes(query) ||
-                    (route.name ?? '').toLowerCase().includes(query) ||
-                    route.middleware.some(m => m.toLowerCase().includes(query));
+        // "/api/v1/auth/login" → base "/api/v1", key "/api/v1/auth". Leading "api" and
+        // version segments ("v1", "v2") are kept in the base rather than treated as groups.
+        function prefixOf(uri) {
+            const segments = uri.split('/').filter(Boolean);
+            const base = [];
+
+            while (segments.length && /^(api|v\d+)$/i.test(segments[0])) {
+                base.push(segments.shift());
+            }
+
+            const basePath = '/' + base.join('/');
+            const next = segments[0];
+
+            // The base itself, or a parameter right after it, stays in the base group
+            if (!next || next.startsWith('{')) {
+                return { key: basePath, base: basePath };
+            }
+
+            return { key: (basePath === '/' ? '' : basePath) + '/' + next, base: basePath };
+        }
+
+        // Group routes by prefix, folding single-route groups into their base so the list
+        // isn't a wall of one-row groups.
+        function groupRoutes(allRoutes) {
+            const prefixes = new Map(allRoutes.map(route => [route, prefixOf(route.uri)]));
+            const sizes = new Map();
+
+            prefixes.forEach(({ key }) => sizes.set(key, (sizes.get(key) ?? 0) + 1));
+
+            const groups = new Map();
+
+            allRoutes.forEach(route => {
+                const { key, base } = prefixes.get(route);
+                const groupKey = sizes.get(key) > 1 ? key : base;
+
+                if (!groups.has(groupKey)) groups.set(groupKey, []);
+                groups.get(groupKey).push(route);
             });
-            renderRoutes(filtered);
-            routeCount.textContent = filtered.length;
+
+            return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+        }
+
+        function renderGroup(key, groupRoutes, forceOpen) {
+            const section = document.createElement('section');
+            section.className = 'group' + (collapsed.has(key) && !forceOpen ? ' collapsed' : '');
+
+            const head = document.createElement('button');
+            head.type = 'button';
+            head.className = 'group-head';
+            head.setAttribute('aria-expanded', String(!section.classList.contains('collapsed')));
+            head.innerHTML = `<svg class="chevron" aria-hidden="true"><use href="#icon-chevron" /></svg>${esc(key)}<span class="count">${groupRoutes.length}</span>`;
+            head.addEventListener('click', () => {
+                const isCollapsed = section.classList.toggle('collapsed');
+                head.setAttribute('aria-expanded', String(!isCollapsed));
+                isCollapsed ? collapsed.add(key) : collapsed.delete(key);
+            });
+
+            const body = document.createElement('div');
+            body.className = 'group-body';
+            body.replaceChildren(...groupRoutes.map(route => renderRoute(route, key)));
+
+            section.replaceChildren(head, body);
+
+            return section;
+        }
+
+        function renderRoute(route, prefix = '') {
+            const item = document.createElement('div');
+            item.className = 'route';
+
+            const methods = route.methods.map(m =>
+                `<span class="m-${KNOWN_METHODS.includes(m) ? m : 'other'}">${esc(m)}</span>`
+            ).join('');
+
+            item.innerHTML = `
+                <div class="row" role="button" tabindex="0" aria-expanded="false">
+                    <div class="methods">${methods}</div>
+                    <div class="main">
+                        <div class="path">${renderPath(route.uri, prefix)}</div>
+                        <div class="meta">${renderMeta(route)}</div>
+                    </div>
+                    <div class="side">
+                        ${route.name ? `<span class="name">${esc(route.name)}</span>` : ''}
+                        <div class="actions">
+                            ${canOpen(route) ? `<a class="action" href="${esc(route.uri)}" target="_blank" rel="noopener" title="Open in new tab">${icon('external')}</a>` : ''}
+                            <button type="button" class="action" data-copy title="Copy path">${icon('copy')}</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="details">${renderDetails(route)}</div>
+            `;
+
+            const row = item.querySelector('.row');
+            const toggle = () => {
+                const open = item.classList.toggle('open');
+                row.setAttribute('aria-expanded', String(open));
+            };
+
+            row.addEventListener('click', event => {
+                if (!event.target.closest('.action')) toggle();
+            });
+            row.addEventListener('keydown', event => {
+                if ((event.key === 'Enter' || event.key === ' ') && event.target === row) {
+                    event.preventDefault();
+                    toggle();
+                }
+            });
+
+            const copyButton = item.querySelector('[data-copy]');
+            copyButton.addEventListener('click', () => copy(route.uri, copyButton));
+
+            return item;
+        }
+
+        function render() {
+            const query = search.value.trim().toLowerCase();
+            const visible = routes[view].filter(route => matches(route, query));
+
+            summary.textContent = query
+                ? `${visible.length} of ${routes[view].length} routes`
+                : `${routes.all.length} routes`;
+
+            if (layout === 'grouped') {
+                // Group the whole view, then filter, so groups don't reshuffle while typing
+                const shown = new Set(visible);
+                const groups = groupRoutes(routes[view])
+                    .map(([key, groupRoutes]) => [key, groupRoutes.filter(route => shown.has(route))])
+                    .filter(([, groupRoutes]) => groupRoutes.length);
+
+                list.replaceChildren(...groups.map(([key, groupRoutes]) => renderGroup(key, groupRoutes, query !== '')));
+            } else {
+                list.replaceChildren(...visible.map(route => renderRoute(route)));
+            }
+
+            if (!visible.length) {
+                list.innerHTML = `<div class="empty">${query ? 'No routes match your filter' : 'No routes'}</div>`;
+            }
+        }
+
+        document.querySelectorAll('[data-count]').forEach(el => {
+            el.textContent = routes[el.dataset.count].length;
         });
 
-        // Tab switching
-        apiTab.addEventListener('click', () => {
-            currentView = 'api';
-            currentRoutes = apiRoutes;
-            apiTab.classList.add('bg-[#1A1A1A]', 'text-white', 'border', 'border-gray-700', 'shadow-sm');
-            apiTab.classList.remove('text-gray-500');
-            pageTab.classList.remove('bg-[#1A1A1A]', 'text-white', 'border', 'border-gray-700', 'shadow-sm');
-            pageTab.classList.add('text-gray-500');
-            routeTitle.textContent = 'API Routes';
-            searchInput.value = '';
-            renderRoutes(currentRoutes);
-            routeCount.textContent = currentRoutes.length;
+        viewButtons.forEach(button => button.addEventListener('click', () => {
+            view = button.dataset.view;
+            viewButtons.forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+            render();
+        }));
+
+        function setLayout(value) {
+            layout = value === 'flat' ? 'flat' : 'grouped';
+            layoutButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.layout === layout)));
+        }
+
+        layoutButtons.forEach(button => button.addEventListener('click', () => {
+            setLayout(button.dataset.layout);
+            writePreference('routescope.layout', layout);
+            render();
+        }));
+
+        setLayout(layout);
+
+        search.addEventListener('input', render);
+
+        // "/" focuses the filter, Escape clears it
+        document.addEventListener('keydown', event => {
+            if (event.key === '/' && document.activeElement !== search) {
+                event.preventDefault();
+                search.focus();
+            } else if (event.key === 'Escape' && document.activeElement === search) {
+                search.value = '';
+                search.blur();
+                render();
+            }
         });
 
-        pageTab.addEventListener('click', () => {
-            currentView = 'page';
-            currentRoutes = pageRoutes;
-            pageTab.classList.add('bg-[#1A1A1A]', 'text-white', 'border', 'border-gray-700', 'shadow-sm');
-            pageTab.classList.remove('text-gray-500');
-            apiTab.classList.remove('bg-[#1A1A1A]', 'text-white', 'border', 'border-gray-700', 'shadow-sm');
-            apiTab.classList.add('text-gray-500');
-            routeTitle.textContent = 'Web Routes';
-            searchInput.value = '';
-            renderRoutes(currentRoutes);
-            routeCount.textContent = currentRoutes.length;
-        });
-
-        // Initial render
-        renderRoutes(currentRoutes);
-
-        // Initialize Lucide icons
-        lucide.createIcons();
+        render();
     </script>
 </body>
 
