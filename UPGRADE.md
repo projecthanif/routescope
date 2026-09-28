@@ -21,9 +21,9 @@ If you published `config/routescope.php`, change the `enabled` line. The old ver
 
 Also add the new `middleware` option, or re-publish with `php artisan vendor:publish --tag=routescope-config --force`.
 
-### Dashboard authorization
+### Dashboard authorization (from 2.0 only)
 
-Outside the `local` environment the dashboard now requires the `viewRouteScope` gate. If you enable RouteScope on staging or elsewhere, define the gate:
+Already in effect if you're on 2.1. Outside the `local` environment the dashboard requires the `viewRouteScope` gate. If you enable RouteScope on staging or elsewhere, define the gate:
 
 ```php
 Gate::define('viewRouteScope', fn ($user = null) => $user?->isAdmin());
@@ -55,9 +55,9 @@ Differences to watch for:
 - Properties instead of array keys. Use `toArray()` if you need an array (keys are snake_case).
 - Filtering by middleware: `$route->hasMiddleware('auth')` instead of `in_array('auth', $route['middleware'])`.
 
-### Excluded patterns
+### Excluded patterns (from 2.0 only)
 
-Patterns now match whole path segments instead of any substring: `telescope` hides `/telescope` and `/telescope/requests`, but no longer `/telescopes` or `/shop/telescope`. Use `*` wildcards if you relied on substring matching (e.g. `*telescope*`).
+Already in effect if you're on 2.1. Patterns match whole path segments instead of any substring: `telescope` hides `/telescope` and `/telescope/requests`, but no longer `/telescopes` or `/shop/telescope`. Use `*` wildcards if you relied on substring matching (e.g. `*telescope*`).
 
 ### Published views
 
