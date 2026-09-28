@@ -34,6 +34,7 @@ Everything below is planned for **3.0.0**. See [UPGRADE.md](UPGRADE.md).
 - `RouteData::key()` and `RouteScopeService::describe()`.
 - The dashboard's route details show the full middleware execution order: global middleware first, collapsed by default, then route and controller middleware.
 - `RouteScope::globalMiddleware()`.
+- `php artisan routescope:export {json|markdown|openapi} {--output=} {--only=api|web|all}`: JSON with every route field, Markdown tables, or an OpenAPI 3.1 skeleton (paths, operations, typed path parameters, optional parameters expanded, middleware under `x-middleware`).
 - "Open in editor" links for each route's file:line, configured with `ROUTESCOPE_EDITOR` or Laravel's `app.editor` (names, custom `href` templates, and `base_path` mapping for Docker/Sail).
 
 ### Removed
