@@ -1,0 +1,80 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Pest 4 requires PHP 8.3+ and PHPUnit 12, which rules out Laravel 10 (Testbench 8).
+        php: ['8.3', '8.4']
+        laravel: ['11.*', '12.*']
+        include:
+          - laravel: '11.*'
+            testbench: '9.*'
+          - laravel: '12.*'
+            testbench: '10.*'
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "illuminate/support:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
+          composer update --prefer-dist --no-interaction --no-progress --with-all-dependencies
+
+      - name: Run tests
+        run: vendor/bin/pest
+
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: pcov
+
+      # Peck uses GNU Aspell for spell checking
+      - name: Install Aspell
+        run: sudo apt-get update && sudo apt-get install -y aspell aspell-en
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Lint
+        run: composer test:lint
+
+      - name: Static analysis
+        run: composer test:types
+
+      - name: Refactor check
+        run: composer test:refactor
+
+      - name: Typos
+        run: composer test:typos
+
+      - name: Type coverage
+        run: composer test:type-coverage
+
+      - name: Tests with coverage
+        run: composer test:unit
