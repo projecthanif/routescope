@@ -64,7 +64,52 @@
         h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
         .summary { color: var(--muted); font-size: 13px; }
 
-        .toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
+        .toolbar { display: flex; gap: 12px; margin-bottom: 12px; }
+
+        .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 16px; }
+        .filters .divider { width: 1px; height: 18px; margin: 0 4px; background: var(--line); }
+
+        .chip-button {
+            height: 26px;
+            padding: 0 10px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--muted);
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .chip-button:hover { color: var(--text); border-color: var(--faint); }
+        .chip-button[aria-pressed="true"] { border-color: var(--text); background: var(--text); color: var(--surface); }
+        .chip-button.method { font: 600 11px var(--mono); letter-spacing: .02em; }
+        .chip-button.method[aria-pressed="true"] { border-color: currentColor; background: color-mix(in srgb, currentColor 12%, transparent); }
+        .chip-button.method.m-GET[aria-pressed="true"] { color: var(--get); }
+        .chip-button.method.m-POST[aria-pressed="true"] { color: var(--post); }
+        .chip-button.method.m-PUT[aria-pressed="true"] { color: var(--put); }
+        .chip-button.method.m-PATCH[aria-pressed="true"] { color: var(--patch); }
+        .chip-button.method.m-DELETE[aria-pressed="true"] { color: var(--delete); }
+        .chip-button.method.m-other[aria-pressed="true"] { color: var(--text); }
+
+        .filters select {
+            height: 26px;
+            max-width: 220px;
+            padding: 0 8px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: var(--surface);
+            color: var(--muted);
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .filters select.active { border-color: var(--text); color: var(--text); }
+        .filters select:focus-visible, .chip-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+        .clear { padding: 0 6px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+        .clear:hover { text-decoration: underline; }
 
         .search { position: relative; flex: 1; }
 
@@ -263,6 +308,7 @@
             header { flex-direction: column; gap: 4px; }
             .toolbar { flex-wrap: wrap; gap: 8px; }
             .search { flex-basis: 100%; }
+            .filters .divider { display: none; }
             .row { grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; padding: 12px; }
             .name { display: none; }
             .actions { opacity: 1; }
@@ -320,6 +366,16 @@
             </div>
         </div>
 
+        <div class="filters" id="filters" role="group" aria-label="Filters">
+            <div id="method-filters" style="display: contents"></div>
+            <span class="divider" aria-hidden="true"></span>
+            <button type="button" class="chip-button" data-flag="unauthenticated" aria-pressed="false" title="Routes without authentication middleware">No auth</button>
+            <button type="button" class="chip-button" data-flag="unnamed" aria-pressed="false" title="Routes without a name">Unnamed</button>
+            <select id="middleware-filter" aria-label="Filter by middleware"></select>
+            <select id="domain-filter" aria-label="Filter by domain" hidden></select>
+            <button type="button" class="clear" id="clear-filters" hidden>Clear filters</button>
+        </div>
+
         <div class="list" id="list"></div>
     </div>
 
@@ -344,6 +400,12 @@
 
         let view = 'all';
         let issuesOnly = false;
+
+        const filters = { methods: new Set(), unauthenticated: false, unnamed: false, middleware: '', domain: '' };
+        const methodFilters = document.getElementById('method-filters');
+        const middlewareFilter = document.getElementById('middleware-filter');
+        const domainFilter = document.getElementById('domain-filter');
+        const clearFilters = document.getElementById('clear-filters');
         const issuesToggle = document.getElementById('issues-toggle');
         let layout = readPreference('routescope.layout', 'grouped');
 
@@ -498,6 +560,80 @@
             }
         }
 
+        function filtersActive() {
+            return filters.methods.size > 0 || filters.unauthenticated || filters.unnamed || filters.middleware !== '' || filters.domain !== '';
+        }
+
+        // "throttle" matches "throttle:60,1", like RouteData::hasMiddleware()
+        function usesMiddleware(route, name) {
+            return route.middleware.some(m => m === name || m.startsWith(name + ':'));
+        }
+
+        function passesFilters(route) {
+            return (filters.methods.size === 0 || route.methods.some(m => filters.methods.has(m)))
+                && (!filters.unauthenticated || !route.authenticated)
+                && (!filters.unnamed || !route.name)
+                && (filters.middleware === '' || usesMiddleware(route, filters.middleware))
+                && (filters.domain === '' || (route.domain ?? '') === filters.domain);
+        }
+
+        function option(value, label) {
+            const el = document.createElement('option');
+            el.value = value;
+            el.textContent = label;
+            return el;
+        }
+
+        function buildFilters() {
+            const methods = [...new Set(routes.all.flatMap(route => route.methods))]
+                .sort((a, b) => (KNOWN_METHODS.indexOf(a) + 1 || 99) - (KNOWN_METHODS.indexOf(b) + 1 || 99));
+
+            methodFilters.replaceChildren(...methods.map(method => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `chip-button method m-${KNOWN_METHODS.includes(method) ? method : 'other'}`;
+                button.textContent = method;
+                button.setAttribute('aria-pressed', 'false');
+                button.addEventListener('click', () => {
+                    filters.methods.has(method) ? filters.methods.delete(method) : filters.methods.add(method);
+                    button.setAttribute('aria-pressed', String(filters.methods.has(method)));
+                    render();
+                });
+                return button;
+            }));
+
+            // Middleware names without parameters ("throttle", not "throttle:60,1"), with how many routes use each
+            const middlewareCounts = new Map();
+            routes.all.forEach(route => new Set(route.middleware.map(m => m.split(':')[0]))
+                .forEach(name => middlewareCounts.set(name, (middlewareCounts.get(name) ?? 0) + 1)));
+
+            middlewareFilter.replaceChildren(
+                option('', 'Any middleware'),
+                ...[...middlewareCounts].sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => option(name, `${name} (${count})`)),
+            );
+            middlewareFilter.hidden = middlewareCounts.size === 0;
+
+            const domains = [...new Set(routes.all.map(route => route.domain ?? ''))].sort();
+
+            if (domains.some(Boolean)) {
+                domainFilter.replaceChildren(
+                    option('', 'Any domain'),
+                    ...domains.map(domain => option(domain, domain || 'No domain')),
+                );
+                domainFilter.hidden = false;
+            }
+        }
+
+        function syncFilterControls() {
+            document.querySelectorAll('[data-flag]').forEach(b => b.setAttribute('aria-pressed', String(filters[b.dataset.flag])));
+            methodFilters.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(filters.methods.has(b.textContent))));
+            middlewareFilter.value = filters.middleware;
+            domainFilter.value = filters.domain;
+            middlewareFilter.classList.toggle('active', filters.middleware !== '');
+            domainFilter.classList.toggle('active', filters.domain !== '');
+            clearFilters.hidden = !filtersActive();
+        }
+
         function matches(route, query) {
             return [route.uri, route.source, route.action, route.name ?? '', ...route.methods, ...route.middleware]
                 .some(value => value.toLowerCase().includes(query));
@@ -629,8 +765,10 @@
 
         function render() {
             const query = search.value.trim().toLowerCase();
-            const visible = routes[view].filter(route => matches(route, query) && (!issuesOnly || route.issues.length));
-            const filtering = query !== '' || issuesOnly;
+            const visible = routes[view].filter(route => matches(route, query) && (!issuesOnly || route.issues.length) && passesFilters(route));
+            const filtering = query !== '' || issuesOnly || filtersActive();
+
+            syncFilterControls();
 
             summary.textContent = filtering
                 ? `${visible.length} of ${routes[view].length} routes`
@@ -698,6 +836,29 @@
         setLayout(layout);
 
         search.addEventListener('input', render);
+
+        buildFilters();
+
+        document.querySelectorAll('[data-flag]').forEach(button => button.addEventListener('click', () => {
+            filters[button.dataset.flag] = !filters[button.dataset.flag];
+            render();
+        }));
+
+        middlewareFilter.addEventListener('change', () => {
+            filters.middleware = middlewareFilter.value;
+            render();
+        });
+
+        domainFilter.addEventListener('change', () => {
+            filters.domain = domainFilter.value;
+            render();
+        });
+
+        clearFilters.addEventListener('click', () => {
+            Object.assign(filters, { unauthenticated: false, unnamed: false, middleware: '', domain: '' });
+            filters.methods.clear();
+            render();
+        });
 
         // "/" focuses the filter, Escape clears it
         document.addEventListener('keydown', event => {

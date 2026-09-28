@@ -117,6 +117,9 @@ A beautiful, responsive interface that displays:
 - Controller actions or closure definitions
 - Applied middleware
 - Search across path, method, name, middleware and source
+- Filters for HTTP method, middleware, domain, routes without authentication ("No auth", using `audit.auth_middleware`) and unnamed routes
+- Routes grouped by path prefix, with audit issues flagged on each route
+- Expandable details: action, file:line (opens in your editor), parameters and the middleware execution order
 - Copy a path, or open parameter-free GET routes in a new tab
 
 ### 🔌 Programmatic Access

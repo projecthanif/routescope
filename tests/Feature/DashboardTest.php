@@ -143,3 +143,26 @@ it('passes editor links and global middleware to the dashboard', function (): vo
                 && $links['/closure'] === 'phpstorm://open?file='.__FILE__.'&line='.$line;
         });
 });
+
+it('marks which routes require authentication', function (): void {
+    setEnvironment('local');
+    Route::get('open', fn (): string => '');
+    Route::get('private', fn (): string => '')->middleware('auth:sanctum');
+    Route::get('signed', fn (): string => '')->middleware('signed');
+    Route::get('custom', fn (): string => '')->middleware('custom-auth');
+
+    $authenticated = fn (): array => array_column($this->get('/routescope')->viewData('webRoutes'), 'authenticated', 'uri');
+
+    expect(array_intersect_key($authenticated(), array_flip(['/open', '/private', '/signed', '/custom'])))->toBe([
+        '/custom' => false,
+        '/open' => false,
+        '/private' => true,
+        '/signed' => true,
+    ]);
+
+    // Uses the same configurable list as the api-without-auth audit rule
+    config(['routescope.audit.auth_middleware' => ['custom-auth']]);
+
+    expect($authenticated()['/custom'])->toBeTrue()
+        ->and($authenticated()['/private'])->toBeFalse();
+});
