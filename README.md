@@ -56,8 +56,8 @@ Edit `config/routescope.php`:
 
 ```php
 return [
-    // Only enable in local/development environments
-    'enabled' => env('ROUTESCOPE_ENABLED', app()->environment('local', 'development')),
+    // null (the default) enables it in local/development only
+    'enabled' => env('ROUTESCOPE_ENABLED'),
     
     // Customize the dashboard URL
     'prefix' => env('ROUTESCOPE_PREFIX', 'routescope'),
@@ -74,6 +74,7 @@ return [
         'sanctum/csrf-cookie',
         'telescope',
         '_debugbar',
+        '_boost',
         '__execute-laravel-error-solution',
     ],
 ];
@@ -84,6 +85,16 @@ To customize the dashboard itself, publish the views:
 ```bash
 php artisan vendor:publish --tag=routescope-views
 ```
+
+### Open in Editor
+
+Set `ROUTESCOPE_EDITOR` (or Laravel's own `app.editor`) and each route's file:line on the dashboard opens in your editor:
+
+```env
+ROUTESCOPE_EDITOR=phpstorm   # or vscode, cursor, zed, sublime, idea, windsurf, ...
+```
+
+`editor` also accepts Laravel's array format, e.g. `['name' => 'vscode', 'base_path' => '/Users/me/code/app']` when the app runs in Docker or Sail and your editor sees the project at a different path, or `['href' => 'myeditor://open?file={file}&line={line}']` for any other editor.
 
 ## Authorization
 
@@ -102,25 +113,26 @@ Gate::define('viewRouteScope', function ($user = null) {
 ### 📊 Interactive Dashboard
 A beautiful, responsive interface that displays:
 - HTTP methods (GET, POST, PUT, DELETE, PATCH)
-- Route URIs and named routes
+- Route URIs and named routes (one row per route, with all of its methods)
 - Controller actions or closure definitions
 - Applied middleware
 - Search across path, method, name, middleware and source
+- Filters for HTTP method, middleware, domain, routes without authentication ("No auth", using `audit.auth_middleware`) and unnamed routes
+- Routes grouped by path prefix, with audit issues flagged on each route
+- Expandable details: action, file:line (opens in your editor), parameters and the middleware execution order
 - Copy a path, or open parameter-free GET routes in a new tab
+- Shareable URLs: the view, search, filters and the expanded route are kept in the query string (e.g. `/routescope?view=api&noauth=1&route=GET+/api/users`), so you can bookmark a filtered view or link a teammate to a specific route
 
 ### 🔌 Programmatic Access
-Query routes from your code using the facade or dependency injection:
+Query routes from your code using the facade or dependency injection. Each route is a typed `RouteData` object:
 
 ```php
 use Projecthanif\RouteScope\Facades\RouteScope;
 
-$routes = RouteScope::getAllRoutes();
-
-// Returns:
-[
-    'apiRoutes' => Collection,  // Routes under /api or using the "api" middleware group
-    'webRoutes' => Collection,  // All other routes
-]
+RouteScope::all();  // Collection<int, RouteData>
+RouteScope::api();  // Routes under /api or using the "api" middleware group
+RouteScope::web();  // All other routes
+RouteScope::filter(fn (RouteData $route) => $route->hasMiddleware('auth'));
 ```
 
 ### 🎨 Smart Categorization
@@ -143,110 +155,192 @@ Built with strict typing and comprehensive type hints for a better development e
 ### View All Routes in a Custom Command
 
 ```php
+use Projecthanif\RouteScope\Data\RouteData;
 use Projecthanif\RouteScope\Facades\RouteScope;
 
 class InspectRoutes extends Command
 {
     public function handle()
     {
-        $all = RouteScope::getAllRoutes();
-        
-        $this->info('API Routes:');
-        foreach ($all['apiRoutes'] as $route) {
-            $this->line("  {$route['method']} {$route['path']}");
-        }
-        
-        $this->info('Web Routes:');
-        foreach ($all['webRoutes'] as $route) {
-            $this->line("  {$route['method']} {$route['path']}");
+        foreach (RouteScope::all() as $route) {
+            $this->line(sprintf('%-12s %s', implode('|', $route->methods), $route->uri));
         }
     }
 }
 ```
 
-### Find Routes with Specific Middleware
+### Find API Routes Without Authentication
 
 ```php
-use Projecthanif\RouteScope\Services\RouteScopeService;
-
-$service = app(RouteScopeService::class);
-$routes = $service->getAllRoutes();
-
-$authRoutes = collect($routes['webRoutes'])
-    ->filter(fn($route) => in_array('auth', $route['middleware']))
-    ->all();
+$unprotected = RouteScope::api()
+    ->reject(fn (RouteData $route) => $route->hasMiddleware('auth') || $route->hasMiddleware('auth:sanctum'));
 ```
+
+`hasMiddleware()` checks both the declared middleware and the resolved middleware (after expanding groups and aliases). It also matches parameterized middleware, so `hasMiddleware('throttle')` matches `throttle:60,1`.
 
 ### Generate API Documentation
 
 ```php
-use Projecthanif\RouteScope\Facades\RouteScope;
-
-$routes = RouteScope::getAllRoutes();
-
 $markdown = "# API Endpoints\n\n";
 
-foreach ($routes['apiRoutes'] as $route) {
-    $markdown .= "### {$route['method']} {$route['path']}\n\n";
-    $markdown .= "**Controller**: `{$route['source']}`\n";
-    $markdown .= "**Middleware**: " . implode(', ', $route['middleware']) . "\n\n";
+foreach (RouteScope::api() as $route) {
+    $markdown .= '### '.implode('|', $route->methods)." {$route->uri}\n\n";
+    $markdown .= "**Controller**: `{$route->action}`\n";
+    $markdown .= '**Middleware**: '.implode(', ', $route->middleware)."\n\n";
 }
 
 file_put_contents('api-docs.md', $markdown);
 ```
 
-### Dependency Injection in Controllers
+### Export as JSON
+
+`RouteData` implements `JsonSerializable`, so collections can be returned or encoded directly:
+
+```php
+return response()->json(RouteScope::all());
+```
+
+### Dependency Injection
 
 ```php
 use Projecthanif\RouteScope\Services\RouteScopeService;
 
 class RouteAnalysisController extends Controller
 {
-    public function __construct(
-        private RouteScopeService $routeScope
-    ) {}
-    
-    public function index()
+    public function index(RouteScopeService $routeScope)
     {
-        $routes = $this->routeScope->getAllRoutes();
-        
-        return view('admin.routes', compact('routes'));
+        return view('admin.routes', ['routes' => $routeScope->all()]);
     }
 }
 ```
 
-## API Reference
+## Auditing Routes
 
-### `RouteScope::getAllRoutes(): array`
+`routescope:audit` checks your routes for common mistakes:
 
-Returns all routes organized into API and Web categories, as collections sorted by path and then method. `HEAD` and `OPTIONS` are omitted.
+| Rule | Severity | Catches |
+|---|---|---|
+| `missing-action` | error | Controller classes or methods that don't exist |
+| `overridden-route` | warning | A route silently replaced by a later definition of the same method and URI |
+| `shadowed-route` | warning | A route that never matches because an earlier one catches it (e.g. `/users/{user}` registered before `/users/create`) |
+| `duplicate-name` | warning | Several routes sharing a name, so `route()` only reaches one |
+| `api-without-auth` | warning | API routes without authentication middleware (signed URLs count as protected) |
 
-**Response Structure:**
+```bash
+php artisan routescope:audit
+```
+
+```
+  WARN   POST /api/v1/auth/login  api-without-auth
+         API route has no authentication middleware.
+
+  0 errors, 1 warning
+```
+
+It exits with a non-zero code when it finds issues, so you can run it in CI:
+
+```bash
+php artisan routescope:audit                  # fail on warnings and errors (default)
+php artisan routescope:audit --fail-on=error  # fail only on errors
+php artisan routescope:audit --fail-on=never  # report only
+php artisan routescope:audit --json           # machine-readable output
+```
+
+The dashboard shows the same issues on each route, with a header button to show only affected routes.
+
+### Configuring the Audit
 
 ```php
-[
-    'apiRoutes' => [
-        [
-            'method' => 'GET|POST|PUT|DELETE|PATCH',
-            'path' => '/api/users',
-            'name' => 'users.index',  // or null if unnamed
-            'source' => 'http/controllers/UserController::index',  // or "Closure", "View: welcome", "Redirect: /new"
-            'middleware' => ['api', 'auth:sanctum'],
-        ],
-        // ... more routes
+'audit' => [
+    // Middleware that counts as authentication. "auth" also matches "auth:sanctum".
+    'auth_middleware' => ['auth', 'auth.basic', 'signed', /* ... */],
+
+    // URI patterns or route names to skip, per rule, or "*" for every rule
+    'ignore' => [
+        'api-without-auth' => ['api/*/auth/login', 'api/*/auth/register', 'webhooks.*'],
+        '*' => ['api/internal/*'],
     ],
-    'webRoutes' => [
-        [
-            'method' => 'GET',
-            'path' => '/dashboard',
-            'name' => 'dashboard',
-            'source' => 'http/controllers/DashboardController::show',
-            'middleware' => ['web', 'auth'],
-        ],
-        // ... more routes
-    ]
-]
+
+    // Replace or extend the rules. Each implements Projecthanif\RouteScope\Audit\Rule.
+    'rules' => [
+        \Projecthanif\RouteScope\Audit\Rules\MissingAction::class,
+        // ...
+        \App\Audit\RequireRouteNames::class,
+    ],
+],
 ```
+
+A custom rule returns `Issue` objects and can type-hint dependencies in its constructor:
+
+```php
+use Projecthanif\RouteScope\Audit\{Issue, Rule, Severity};
+use Projecthanif\RouteScope\Services\RouteScopeService;
+
+final class RequireRouteNames implements Rule
+{
+    public function __construct(private RouteScopeService $routes) {}
+
+    public function id(): string
+    {
+        return 'unnamed-route';
+    }
+
+    public function check(): iterable
+    {
+        foreach ($this->routes->all() as $route) {
+            if ($route->name === null) {
+                yield new Issue($this->id(), Severity::Warning, 'Route has no name.', $route);
+            }
+        }
+    }
+}
+```
+
+## Exporting Routes
+
+`routescope:export` writes your routes as JSON, Markdown or an OpenAPI skeleton. Output is deterministic (no timestamps), so you can commit it and review route changes in diffs.
+
+```bash
+php artisan routescope:export                                   # JSON to standard output
+php artisan routescope:export markdown --output=docs/routes.md  # Markdown tables
+php artisan routescope:export openapi --output=openapi.json     # OpenAPI 3.1 skeleton
+php artisan routescope:export json --only=api                   # api, web or all
+```
+
+- **json**: every `RouteData` field for each route.
+- **markdown**: a table per section (API, web) with methods, URI, name, action and middleware.
+- **openapi**: API routes only unless you pass `--only`. It includes paths, operations and path parameters, and uses `app.name` as the title. Optional parameters (`{tab?}`) become separate paths, since OpenAPI has no optional path parameters. `[0-9]+` constraints become integers, and other `where()` patterns become string patterns. Requests, responses and security can't be derived from routes, so each operation gets a placeholder response and its middleware under `x-middleware` for you to fill in from.
+
+## API Reference
+
+### `RouteScope::all(): Collection<int, RouteData>`
+
+Returns every route, sorted by URI and then by HTTP method. RouteScope's own routes and `excluded_patterns` are left out. `api()`, `web()` and `filter(callable)` return the same collection narrowed down.
+
+### `RouteData`
+
+| Property | Type | Example |
+|---|---|---|
+| `methods` | `list<string>` | `['GET', 'POST']` (never `HEAD`/`OPTIONS`) |
+| `uri` | `string` | `/users/{user}` |
+| `name` | `?string` | `users.show` |
+| `domain` | `?string` | `{account}.example.com` |
+| `action` | `string` | `App\Http\Controllers\UserController@show`, or `Closure` |
+| `source` | `string` | `http/controllers/UserController::show`, `Closure`, `View: welcome`, `Redirect: /new` |
+| `middleware` | `list<string>` | `['web', 'auth']`, as declared |
+| `resolvedMiddleware` | `list<string>` | Route and controller middleware with groups and aliases expanded, in the order Laravel runs them (sorted by middleware priority) |
+| `parameters` | `list<RouteParameter>` | `name`, `optional`, and `pattern` (from `where()` constraints) |
+| `file` / `line` | `?string` / `?int` | `app/Http/Controllers/UserController.php`, `42` (relative to the app when inside it) |
+| `isApi` | `bool` | |
+| `isFallback` | `bool` | |
+
+Methods: `hasMethod(string)`, `hasMiddleware(string)`, `key()`, `toArray()` (snake_case keys), `jsonSerialize()`.
+
+`RouteScope::globalMiddleware()` returns the HTTP kernel's global middleware, which runs before every route's `resolvedMiddleware`.
+
+### `RouteScope::getAllRoutes(): array` (deprecated)
+
+The v2 format: `['apiRoutes' => Collection, 'webRoutes' => Collection]`, with one array per HTTP method (`method`, `path`, `name`, `source`, `middleware`). It still works in v3 and will be removed in v4. See [UPGRADE.md](UPGRADE.md).
 
 ## Environment Variables
 
@@ -276,9 +370,8 @@ ROUTESCOPE_ENABLED=false
 
 ## Requirements
 
-- PHP 8.1 or higher
-- Laravel 10.0 or higher
-- Illuminate/Support package
+- PHP 8.3 or higher
+- Laravel 11, 12 or 13
 
 ## Use Cases
 

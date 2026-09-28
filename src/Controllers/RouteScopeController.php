@@ -6,17 +6,40 @@ namespace Projecthanif\RouteScope\Controllers;
 
 use Illuminate\Contracts\View\View;
 use Illuminate\Routing\Controller;
-use Projecthanif\RouteScope\Facades\RouteScope;
+use Projecthanif\RouteScope\Audit\Auditor;
+use Projecthanif\RouteScope\Audit\Issue;
+use Projecthanif\RouteScope\Data\RouteData;
+use Projecthanif\RouteScope\Services\RouteScopeService;
+use Projecthanif\RouteScope\Support\AuthMiddleware;
+use Projecthanif\RouteScope\Support\EditorLink;
 
 final class RouteScopeController extends Controller
 {
-    public function index(): View
+    public function index(RouteScopeService $routeScope, Auditor $auditor): View
     {
-        $routes = RouteScope::getAllRoutes();
+        $issues = $auditor->audit()->groupBy(fn (Issue $issue): string => $issue->route->key());
+        $editor = EditorLink::fromConfig();
+        $auth = new AuthMiddleware;
+
+        $toArray = fn (RouteData $route): array => [
+            ...$route->toArray(),
+            'key' => $route->key(),
+            'editor_url' => $editor->url($route->file, $route->line),
+            'authenticated' => $auth->protects($route),
+            'issues' => $issues->get($route->key(), collect())
+                ->map(fn (Issue $issue): array => [
+                    'rule' => $issue->rule,
+                    'severity' => $issue->severity->value,
+                    'message' => $issue->message,
+                ])
+                ->values()
+                ->all(),
+        ];
 
         return view('routescope::routescope', [
-            'apiRoutes' => $routes['apiRoutes']->all(),
-            'webRoutes' => $routes['webRoutes']->all(),
+            'apiRoutes' => $routeScope->api()->map($toArray)->all(),
+            'webRoutes' => $routeScope->web()->map($toArray)->all(),
+            'globalMiddleware' => $routeScope->globalMiddleware(),
         ]);
     }
 }

@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use Illuminate\Container\Container;
+use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Projecthanif\RouteScope\Http\Middleware\Authorize;
+use Projecthanif\RouteScope\Providers\RouteScopeProvider;
 
 function setEnvironment(string $env): void
 {
@@ -19,8 +22,8 @@ it('renders the dashboard in the local environment', function (): void {
     $this->get('/routescope')
         ->assertOk()
         ->assertViewIs('routescope::routescope')
-        ->assertViewHas('apiRoutes', fn (array $routes): bool => array_column($routes, 'path') === ['/api/users'])
-        ->assertViewHas('webRoutes', fn (array $routes): bool => in_array('/about', array_column($routes, 'path'), true));
+        ->assertViewHas('apiRoutes', fn (array $routes): bool => array_column($routes, 'uri') === ['/api/users'])
+        ->assertViewHas('webRoutes', fn (array $routes): bool => in_array('/about', array_column($routes, 'uri'), true));
 });
 
 it('escapes route data embedded in the page', function (): void {
@@ -68,4 +71,109 @@ it('does not register routes when disabled', function (): void {
     $this->rebootPackage();
 
     expect(Route::getRoutes()->getByName('routescope.index'))->toBeNull();
+});
+
+it('can load the config file before the application environment is known', function (): void {
+    // Published config files are loaded before the "env" binding exists, so the file must not touch the app.
+    $app = Container::getInstance();
+    Container::setInstance(new Container);
+
+    try {
+        $config = require RouteScopeProvider::CONFIG_PATH;
+    } finally {
+        Container::setInstance($app);
+    }
+
+    expect($config['enabled'])->toBeNull();
+});
+
+it('is enabled by default only in local and development', function (string $env, bool $enabled): void {
+    config(['routescope.enabled' => null]);
+    setEnvironment($env);
+    $this->rebootPackage();
+
+    expect(Route::getRoutes()->getByName('routescope.index') !== null)->toBe($enabled);
+})->with([
+    ['local', true],
+    ['development', true],
+    ['staging', false],
+    ['production', false],
+]);
+
+it('can be forced on or off regardless of environment', function (mixed $value, string $env, bool $enabled): void {
+    config(['routescope.enabled' => $value]);
+    setEnvironment($env);
+    $this->rebootPackage();
+
+    expect(Route::getRoutes()->getByName('routescope.index') !== null)->toBe($enabled);
+})->with([
+    [true, 'production', true],
+    ['true', 'production', true],
+    [false, 'local', false],
+    ['false', 'local', false],
+]);
+
+it('attaches audit issues to routes on the dashboard', function (): void {
+    setEnvironment('local');
+    Route::get('api/open', fn (): string => '');
+    Route::get('api/private', fn (): string => '')->middleware('auth');
+
+    $this->get('/routescope')
+        ->assertOk()
+        ->assertViewHas('apiRoutes', fn (array $routes): bool => array_column($routes, 'issues', 'uri') === [
+            '/api/open' => [['rule' => 'api-without-auth', 'severity' => 'warning', 'message' => 'API route has no authentication middleware.']],
+            '/api/private' => [],
+        ]);
+});
+
+it('passes editor links and global middleware to the dashboard', function (): void {
+    setEnvironment('local');
+    config(['routescope.editor' => 'phpstorm']);
+    $line = __LINE__ + 1;
+    Route::get('closure', fn (): string => '');
+    Route::view('about', 'about');
+
+    $this->get('/routescope')
+        ->assertOk()
+        ->assertViewHas('globalMiddleware', fn (array $middleware): bool => in_array(HandleCors::class, $middleware, true))
+        ->assertViewHas('webRoutes', function (array $routes) use ($line): bool {
+            $links = array_column($routes, 'editor_url', 'uri');
+
+            return $links['/about'] === null
+                && $links['/closure'] === 'phpstorm://open?file='.__FILE__.'&line='.$line;
+        });
+});
+
+it('marks which routes require authentication', function (): void {
+    setEnvironment('local');
+    Route::get('open', fn (): string => '');
+    Route::get('private', fn (): string => '')->middleware('auth:sanctum');
+    Route::get('signed', fn (): string => '')->middleware('signed');
+    Route::get('custom', fn (): string => '')->middleware('custom-auth');
+
+    $authenticated = fn (): array => array_column($this->get('/routescope')->viewData('webRoutes'), 'authenticated', 'uri');
+
+    expect(array_intersect_key($authenticated(), array_flip(['/open', '/private', '/signed', '/custom'])))->toBe([
+        '/custom' => false,
+        '/open' => false,
+        '/private' => true,
+        '/signed' => true,
+    ]);
+
+    // Uses the same configurable list as the api-without-auth audit rule
+    config(['routescope.audit.auth_middleware' => ['custom-auth']]);
+
+    expect($authenticated()['/custom'])->toBeTrue()
+        ->and($authenticated()['/private'])->toBeFalse();
+});
+
+it('gives each route a key the dashboard can link to', function (): void {
+    setEnvironment('local');
+    Route::match(['get', 'post'], 'contact', fn (): string => '');
+    Route::domain('{account}.example.com')->get('home', fn (): string => '');
+
+    $keys = array_column($this->get('/routescope')->viewData('webRoutes'), 'key', 'uri');
+
+    expect($keys['/contact'])->toBe('GET|POST /contact')
+        ->and($keys['/home'])->toBe('GET {account}.example.com/home');
 });
