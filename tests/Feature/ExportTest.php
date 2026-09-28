@@ -171,6 +171,17 @@ it('expands optional parameters into separate paths', function (): void {
         ->toBe(['getTeamsTeam', 'getTeamsTeamTab', 'getTeamsTeamTabSection']);
 });
 
+it('declares parameters embedded inside a path segment', function (): void {
+    Route::get('files/{name}.{ext}', fn (): string => '')->where('ext', 'pdf|png');
+
+    $parameters = openApi()['paths']['/files/{name}.{ext}']['get']['parameters'];
+
+    expect($parameters)->toBe([
+        ['name' => 'name', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string']],
+        ['name' => 'ext', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'string', 'pattern' => '^(?:pdf|png)$']],
+    ]);
+});
+
 it('keeps operation ids unique and skips unsupported methods and fallbacks', function (): void {
     Route::match(['get', 'post'], 'items', fn (): string => '')->name('items');
     Route::get('items-', fn (): string => '');

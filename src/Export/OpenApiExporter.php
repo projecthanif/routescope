@@ -66,37 +66,36 @@ final readonly class OpenApiExporter implements Exporter
     private function pathVariants(RouteData $route): array
     {
         $segments = explode('/', ltrim($route->uri, '/'));
+        $known = [];
+
+        foreach ($route->parameters as $parameter) {
+            $known[$parameter->name] = $parameter;
+        }
+
         $required = [];
         $variants = [];
         $parameters = [];
 
         foreach ($segments as $segment) {
-            if (preg_match('/^\{(\w+)\?\}$/', $segment, $match) === 1) {
+            // A whole optional segment is the point where a shorter variant ends
+            if (preg_match('/^\{\w+\?\}$/', $segment) === 1) {
                 $variants[] = ['/'.implode('/', $required), $parameters];
-                $segment = '{'.$match[1].'}';
             }
 
+            $segment = (string) preg_replace('/\{(\w+)\?\}/', '{$1}', $segment);
             $required[] = $segment;
 
-            if (preg_match('/^\{(\w+)\}$/', $segment, $match) === 1) {
-                $parameters[] = $this->parameter($route, $match[1]);
+            // Parameters can also sit inside a segment, e.g. "{name}.{ext}"
+            preg_match_all('/\{(\w+)\}/', $segment, $matches);
+
+            foreach ($matches[1] as $name) {
+                $parameters[] = $known[$name] ?? new RouteParameter($name, false, null);
             }
         }
 
         $variants[] = ['/'.implode('/', $required), $parameters];
 
         return $variants;
-    }
-
-    private function parameter(RouteData $route, string $name): RouteParameter
-    {
-        foreach ($route->parameters as $parameter) {
-            if ($parameter->name === $name) {
-                return $parameter;
-            }
-        }
-
-        return new RouteParameter($name, false, null);
     }
 
     /**
