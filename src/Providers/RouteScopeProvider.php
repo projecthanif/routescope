@@ -6,6 +6,7 @@ namespace Projecthanif\RouteScope\Providers;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Projecthanif\RouteScope\Console\AuditCommand;
 use Projecthanif\RouteScope\Http\Middleware\Authorize;
 
 final class RouteScopeProvider extends ServiceProvider
@@ -30,6 +31,10 @@ final class RouteScopeProvider extends ServiceProvider
         $this->loadViewsFrom(self::VIEWS_PATH, 'routescope');
         $this->registerPublishing();
         $this->registerRoutes();
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([AuditCommand::class]);
+        }
     }
 
     /**

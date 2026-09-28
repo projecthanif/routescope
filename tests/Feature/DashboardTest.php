@@ -111,3 +111,16 @@ it('can be forced on or off regardless of environment', function (mixed $value, 
     [false, 'local', false],
     ['false', 'local', false],
 ]);
+
+it('attaches audit issues to routes on the dashboard', function (): void {
+    setEnvironment('local');
+    Route::get('api/open', fn (): string => '');
+    Route::get('api/private', fn (): string => '')->middleware('auth');
+
+    $this->get('/routescope')
+        ->assertOk()
+        ->assertViewHas('apiRoutes', fn (array $routes): bool => array_column($routes, 'issues', 'uri') === [
+            '/api/open' => [['rule' => 'api-without-auth', 'severity' => 'warning', 'message' => 'API route has no authentication middleware.']],
+            '/api/private' => [],
+        ]);
+});

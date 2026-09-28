@@ -1,5 +1,9 @@
 <?php
 
+use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Auth\Middleware\AuthenticateWithBasicAuth;
+use Illuminate\Routing\Middleware\ValidateSignature;
+
 return [
     /*
     |--------------------------------------------------------------------------
@@ -60,5 +64,40 @@ return [
         '_debugbar',
         '_boost',
         '__execute-laravel-error-solution',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Audit
+    |--------------------------------------------------------------------------
+    |
+    | Used by `php artisan routescope:audit` and the dashboard.
+    |
+    | "auth_middleware": middleware that counts as authentication for the
+    | api-without-auth rule. Parameterized middleware matches too, so "auth"
+    | covers "auth:sanctum". Signed URLs count as protected.
+    |
+    | "ignore": URI patterns or route names to skip, per rule. Use "*" for all
+    | rules. Rules: missing-action, overridden-route, shadowed-route,
+    | duplicate-name, api-without-auth.
+    |
+    */
+
+    'audit' => [
+        'auth_middleware' => [
+            'auth',
+            'auth.basic',
+            'signed',
+            Authenticate::class,
+            AuthenticateWithBasicAuth::class,
+            ValidateSignature::class,
+        ],
+
+        'ignore' => [
+            'api-without-auth' => [
+                // 'api/*/auth/login',
+                // 'webhooks.*',
+            ],
+        ],
     ],
 ];

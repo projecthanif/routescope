@@ -51,6 +51,14 @@ final readonly class RouteData implements JsonSerializable
         public bool $isFallback,
     ) {}
 
+    /**
+     * Uniquely identifies the route, e.g. "GET|POST {account}.example.com/users".
+     */
+    public function key(): string
+    {
+        return implode('|', $this->methods).' '.$this->domain.$this->uri;
+    }
+
     public function hasMethod(string $method): bool
     {
         return in_array(strtoupper($method), $this->methods, true);

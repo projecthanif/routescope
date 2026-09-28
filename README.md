@@ -200,6 +200,88 @@ class RouteAnalysisController extends Controller
 }
 ```
 
+## Auditing Routes
+
+`routescope:audit` checks your routes for common mistakes:
+
+| Rule | Severity | Catches |
+|---|---|---|
+| `missing-action` | error | Controller classes or methods that don't exist |
+| `overridden-route` | warning | A route silently replaced by a later definition of the same method and URI |
+| `shadowed-route` | warning | A route that never matches because an earlier one catches it (e.g. `/users/{user}` registered before `/users/create`) |
+| `duplicate-name` | warning | Several routes sharing a name, so `route()` only reaches one |
+| `api-without-auth` | warning | API routes without authentication middleware (signed URLs count as protected) |
+
+```bash
+php artisan routescope:audit
+```
+
+```
+  WARN   POST /api/v1/auth/login  api-without-auth
+         API route has no authentication middleware.
+
+  0 errors, 1 warning
+```
+
+It exits with a non-zero code when it finds issues, so you can run it in CI:
+
+```bash
+php artisan routescope:audit                  # fail on warnings and errors (default)
+php artisan routescope:audit --fail-on=error  # fail only on errors
+php artisan routescope:audit --fail-on=never  # report only
+php artisan routescope:audit --json           # machine-readable output
+```
+
+The dashboard shows the same issues on each route, with a header button to show only affected routes.
+
+### Configuring the Audit
+
+```php
+'audit' => [
+    // Middleware that counts as authentication. "auth" also matches "auth:sanctum".
+    'auth_middleware' => ['auth', 'auth.basic', 'signed', /* ... */],
+
+    // URI patterns or route names to skip, per rule, or "*" for every rule
+    'ignore' => [
+        'api-without-auth' => ['api/*/auth/login', 'api/*/auth/register', 'webhooks.*'],
+        '*' => ['api/internal/*'],
+    ],
+
+    // Replace or extend the rules. Each implements Projecthanif\RouteScope\Audit\Rule.
+    'rules' => [
+        \Projecthanif\RouteScope\Audit\Rules\MissingAction::class,
+        // ...
+        \App\Audit\RequireRouteNames::class,
+    ],
+],
+```
+
+A custom rule returns `Issue` objects and can type-hint dependencies in its constructor:
+
+```php
+use Projecthanif\RouteScope\Audit\{Issue, Rule, Severity};
+use Projecthanif\RouteScope\Services\RouteScopeService;
+
+final class RequireRouteNames implements Rule
+{
+    public function __construct(private RouteScopeService $routes) {}
+
+    public function id(): string
+    {
+        return 'unnamed-route';
+    }
+
+    public function check(): iterable
+    {
+        foreach ($this->routes->all() as $route) {
+            if ($route->name === null) {
+                yield new Issue($this->id(), Severity::Warning, 'Route has no name.', $route);
+            }
+        }
+    }
+}
+```
+
 ## API Reference
 
 ### `RouteScope::all(): Collection<int, RouteData>`
