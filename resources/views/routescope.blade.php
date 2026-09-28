@@ -399,6 +399,7 @@
         const collapsed = new Set();
 
         let view = 'all';
+        let openRoute = null;
         let issuesOnly = false;
 
         const filters = { methods: new Set(), unauthenticated: false, unnamed: false, middleware: '', domain: '' };
@@ -707,14 +708,15 @@
 
         function renderRoute(route, prefix = '') {
             const item = document.createElement('div');
-            item.className = 'route';
+            item.className = 'route' + (route.key === openRoute ? ' open' : '');
+            item.dataset.key = route.key;
 
             const methods = route.methods.map(m =>
                 `<span class="m-${KNOWN_METHODS.includes(m) ? m : 'other'}">${esc(m)}</span>`
             ).join('');
 
             item.innerHTML = `
-                <div class="row" role="button" tabindex="0" aria-expanded="false">
+                <div class="row" role="button" tabindex="0" aria-expanded="${route.key === openRoute}">
                     <div class="methods">${methods}</div>
                     <div class="main">
                         <div class="path">${renderPath(route.uri, prefix)}</div>
@@ -737,6 +739,15 @@
             const toggle = () => {
                 const open = item.classList.toggle('open');
                 row.setAttribute('aria-expanded', String(open));
+
+                // The URL links to the most recently opened route
+                if (open) {
+                    openRoute = route.key;
+                } else if (openRoute === route.key) {
+                    openRoute = null;
+                }
+
+                writeUrl();
             };
 
             row.addEventListener('click', event => {
@@ -789,6 +800,64 @@
             if (!visible.length) {
                 list.innerHTML = `<div class="empty">${filtering ? 'No routes match your filter' : 'No routes'}</div>`;
             }
+
+            writeUrl();
+        }
+
+        // The view, search, filters and open route live in the query string, so a filtered
+        // view can be bookmarked or shared. Layout stays a per-browser preference.
+        function writeUrl() {
+            const params = new URLSearchParams();
+            const query = search.value.trim();
+
+            if (query) params.set('q', query);
+            if (view !== 'all') params.set('view', view);
+            if (filters.methods.size) params.set('method', [...filters.methods].join(','));
+            if (filters.unauthenticated) params.set('noauth', '1');
+            if (filters.unnamed) params.set('unnamed', '1');
+            if (filters.middleware) params.set('middleware', filters.middleware);
+            if (filters.domain) params.set('domain', filters.domain);
+            if (issuesOnly) params.set('issues', '1');
+            if (openRoute) params.set('route', openRoute);
+
+            const queryString = params.toString();
+
+            try {
+                history.replaceState(null, '', location.pathname + (queryString ? '?' + queryString : '') + location.hash);
+            } catch (e) {
+                // Some embedded or sandboxed contexts don't allow it; the page still works
+            }
+        }
+
+        // Invalid or unknown values are ignored rather than producing an empty list
+        function readUrl() {
+            const params = new URLSearchParams(location.search);
+            const hasOption = (select, value) => [...select.options].some(o => o.value === value);
+            const methods = new Set(routes.all.flatMap(route => route.methods));
+
+            search.value = params.get('q') ?? '';
+
+            if (['api', 'web'].includes(params.get('view'))) {
+                view = params.get('view');
+            }
+
+            (params.get('method') ?? '').split(',').filter(m => methods.has(m)).forEach(m => filters.methods.add(m));
+            filters.unauthenticated = params.get('noauth') === '1';
+            filters.unnamed = params.get('unnamed') === '1';
+
+            const middleware = params.get('middleware') ?? '';
+            filters.middleware = middleware && hasOption(middlewareFilter, middleware) ? middleware : '';
+
+            const domain = params.get('domain') ?? '';
+            filters.domain = domain && !domainFilter.hidden && hasOption(domainFilter, domain) ? domain : '';
+
+            issuesOnly = params.get('issues') === '1' && !issuesToggle.hidden;
+
+            const key = params.get('route');
+            openRoute = key && routes.all.some(route => route.key === key) ? key : null;
+
+            viewButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+            issuesToggle.setAttribute('aria-pressed', String(issuesOnly));
         }
 
         // Issue summary; clicking it shows only routes with issues
@@ -860,6 +929,8 @@
             render();
         });
 
+        readUrl();
+
         // "/" focuses the filter, Escape clears it
         document.addEventListener('keydown', event => {
             if (event.key === '/' && document.activeElement !== search) {
@@ -873,6 +944,14 @@
         });
 
         render();
+
+        // Bring a linked route into view
+        const linked = openRoute && [...list.querySelectorAll('.route.open')].find(el => el.dataset.key === openRoute);
+
+        if (linked) {
+            linked.scrollIntoView({ block: 'center' });
+            linked.querySelector('.row').focus({ preventScroll: true });
+        }
     </script>
 </body>
 

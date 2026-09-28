@@ -23,6 +23,7 @@ final class RouteScopeController extends Controller
 
         $toArray = fn (RouteData $route): array => [
             ...$route->toArray(),
+            'key' => $route->key(),
             'editor_url' => $editor->url($route->file, $route->line),
             'authenticated' => $auth->protects($route),
             'issues' => $issues->get($route->key(), collect())

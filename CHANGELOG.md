@@ -31,6 +31,7 @@ Everything below is planned for **3.0.0**. See [UPGRADE.md](UPGRADE.md).
 - Laravel Boost's `_boost` routes are excluded by default.
 - `php artisan routescope:audit` with `--json` and `--fail-on=error|warning|never`, for use in CI. Rules: `missing-action`, `overridden-route`, `shadowed-route`, `duplicate-name` and `api-without-auth`. Configurable under `audit` (auth middleware, per-rule ignores, custom rules).
 - The dashboard shows audit issues on each route, with a header toggle to show only affected routes.
+- The dashboard keeps its view, search, filters, issues toggle and expanded route in the URL, so filtered views and individual routes can be bookmarked and shared. Opening a link to a route expands it and scrolls to it; invalid values are ignored.
 - Dashboard filters: HTTP method chips, a middleware dropdown (with usage counts), a domain dropdown when routes use domains, and "No auth" / "Unnamed" toggles. "No auth" uses the same `audit.auth_middleware` list as the `api-without-auth` rule.
 - `RouteData::key()` and `RouteScopeService::describe()`.
 - The dashboard's route details show the full middleware execution order: global middleware first, collapsed by default, then route and controller middleware.

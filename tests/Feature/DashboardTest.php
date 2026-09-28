@@ -166,3 +166,14 @@ it('marks which routes require authentication', function (): void {
     expect($authenticated()['/custom'])->toBeTrue()
         ->and($authenticated()['/private'])->toBeFalse();
 });
+
+it('gives each route a key the dashboard can link to', function (): void {
+    setEnvironment('local');
+    Route::match(['get', 'post'], 'contact', fn (): string => '');
+    Route::domain('{account}.example.com')->get('home', fn (): string => '');
+
+    $keys = array_column($this->get('/routescope')->viewData('webRoutes'), 'key', 'uri');
+
+    expect($keys['/contact'])->toBe('GET|POST /contact')
+        ->and($keys['/home'])->toBe('GET {account}.example.com/home');
+});
