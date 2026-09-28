@@ -10,6 +10,7 @@ use Projecthanif\RouteScope\Audit\Auditor;
 use Projecthanif\RouteScope\Audit\Issue;
 use Projecthanif\RouteScope\Data\RouteData;
 use Projecthanif\RouteScope\Services\RouteScopeService;
+use Projecthanif\RouteScope\Support\AuthMiddleware;
 use Projecthanif\RouteScope\Support\EditorLink;
 
 final class RouteScopeController extends Controller
@@ -18,10 +19,12 @@ final class RouteScopeController extends Controller
     {
         $issues = $auditor->audit()->groupBy(fn (Issue $issue): string => $issue->route->key());
         $editor = EditorLink::fromConfig();
+        $auth = new AuthMiddleware;
 
         $toArray = fn (RouteData $route): array => [
             ...$route->toArray(),
             'editor_url' => $editor->url($route->file, $route->line),
+            'authenticated' => $auth->protects($route),
             'issues' => $issues->get($route->key(), collect())
                 ->map(fn (Issue $issue): array => [
                     'rule' => $issue->rule,
