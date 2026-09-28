@@ -292,6 +292,21 @@ final class RequireRouteNames implements Rule
 }
 ```
 
+## Exporting Routes
+
+`routescope:export` writes your routes as JSON, Markdown or an OpenAPI skeleton. Output is deterministic (no timestamps), so you can commit it and review route changes in diffs.
+
+```bash
+php artisan routescope:export                                   # JSON to standard output
+php artisan routescope:export markdown --output=docs/routes.md  # Markdown tables
+php artisan routescope:export openapi --output=openapi.json     # OpenAPI 3.1 skeleton
+php artisan routescope:export json --only=api                   # api, web or all
+```
+
+- **json**: every `RouteData` field for each route.
+- **markdown**: a table per section (API, web) with methods, URI, name, action and middleware.
+- **openapi**: API routes only unless you pass `--only`. It includes paths, operations and path parameters, and uses `app.name` as the title. Optional parameters (`{tab?}`) become separate paths, since OpenAPI has no optional path parameters. `[0-9]+` constraints become integers, and other `where()` patterns become string patterns. Requests, responses and security can't be derived from routes, so each operation gets a placeholder response and its middleware under `x-middleware` for you to fill in from.
+
 ## API Reference
 
 ### `RouteScope::all(): Collection<int, RouteData>`
