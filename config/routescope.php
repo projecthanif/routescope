@@ -48,6 +48,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Editor
+    |--------------------------------------------------------------------------
+    |
+    | Makes "Defined in" links on the dashboard open your editor. Uses the same
+    | format as Laravel's `app.editor` (which is used when this is null): an
+    | editor name such as "phpstorm", "vscode", "cursor" or "zed", or an array:
+    |
+    |   ['name' => 'vscode', 'base_path' => '/Users/me/code/app']
+    |   ['href' => 'myeditor://open?file={file}&line={line}']
+    |
+    | Set "base_path" when the app runs in Docker/Sail and your editor sees
+    | the project at a different path.
+    |
+    */
+
+    'editor' => env('ROUTESCOPE_EDITOR', 'vscode'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Excluded Patterns
     |--------------------------------------------------------------------------
     |

@@ -2,8 +2,19 @@
 
 declare(strict_types=1);
 
+use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
+use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Http\Middleware\HandleCors;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Routing\RouteCollection;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Projecthanif\RouteScope\Data\RouteData;
 use Projecthanif\RouteScope\Data\RouteParameter;
 use Projecthanif\RouteScope\Facades\RouteScope;
@@ -62,7 +73,16 @@ it('describes a route', function (): void {
         'action' => ShowDashboard::class,
         'source' => 'projecthanif/.../fixtures/ShowDashboard::__invoke',
         'middleware' => ['web', 'auth'],
-        'resolved_middleware' => ['web', 'auth'],
+        'resolved_middleware' => [
+            EncryptCookies::class,
+            AddQueuedCookiesToResponse::class,
+            StartSession::class,
+            ShareErrorsFromSession::class,
+            // Laravel 13 renamed ValidateCsrfToken to PreventRequestForgery
+            class_exists(PreventRequestForgery::class) ? PreventRequestForgery::class : ValidateCsrfToken::class,
+            Authenticate::class,
+            SubstituteBindings::class,
+        ],
         'parameters' => [
             ['name' => 'team', 'optional' => false, 'pattern' => '[0-9]+'],
             ['name' => 'tab', 'optional' => true, 'pattern' => null],
@@ -108,15 +128,32 @@ it('has no location when the action cannot be reflected', function (): void {
     expect(routeAt('/missing')->action)->toBe('App\Http\Controllers\MissingController@index');
 });
 
-it('resolves middleware groups and aliases', function (): void {
+it('resolves middleware groups and aliases in execution order', function (): void {
     $router = app('router');
-    $router->middlewareGroup('admin', ['auth', 'verified']);
-    $router->aliasMiddleware('auth', 'App\Http\Middleware\Authenticate');
+    $router->middlewareGroup('admin', ['custom-auth', 'verified']);
+    $router->aliasMiddleware('custom-auth', 'App\Http\Middleware\CustomAuth');
 
-    Route::get('admin', fn (): string => '')->middleware(['admin', 'throttle:60,1']);
+    Route::get('admin', fn (): string => '')->middleware(['admin', 'throttle:60,1', 'auth']);
 
-    expect(routeAt('/admin')->middleware)->toBe(['admin', 'throttle:60,1'])
-        ->and(routeAt('/admin')->resolvedMiddleware)->toBe(['App\Http\Middleware\Authenticate', 'verified', 'throttle:60,1']);
+    expect(routeAt('/admin')->middleware)->toBe(['admin', 'throttle:60,1', 'auth'])
+        // Laravel only reorders middleware in its priority list relative to each other:
+        // Authenticate runs before ThrottleRequests even though it's declared last.
+        ->and(routeAt('/admin')->resolvedMiddleware)->toBe([
+            'App\Http\Middleware\CustomAuth',
+            EnsureEmailIsVerified::class,
+            Authenticate::class,
+            'Illuminate\Routing\Middleware\ThrottleRequests:60,1',
+        ]);
+});
+
+it('lists global middleware from the http kernel', function (): void {
+    expect(RouteScope::globalMiddleware())->toContain(HandleCors::class);
+});
+
+it('has no global middleware without an http kernel', function (): void {
+    app()->offsetUnset(Kernel::class);
+
+    expect(RouteScope::globalMiddleware())->toBe([]);
 });
 
 it('flags fallback routes', function (): void {

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Container\Container;
+use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Projecthanif\RouteScope\Http\Middleware\Authorize;
@@ -123,4 +124,22 @@ it('attaches audit issues to routes on the dashboard', function (): void {
             '/api/open' => [['rule' => 'api-without-auth', 'severity' => 'warning', 'message' => 'API route has no authentication middleware.']],
             '/api/private' => [],
         ]);
+});
+
+it('passes editor links and global middleware to the dashboard', function (): void {
+    setEnvironment('local');
+    config(['routescope.editor' => 'phpstorm']);
+    $line = __LINE__ + 1;
+    Route::get('closure', fn (): string => '');
+    Route::view('about', 'about');
+
+    $this->get('/routescope')
+        ->assertOk()
+        ->assertViewHas('globalMiddleware', fn (array $middleware): bool => in_array(HandleCors::class, $middleware, true))
+        ->assertViewHas('webRoutes', function (array $routes) use ($line): bool {
+            $links = array_column($routes, 'editor_url', 'uri');
+
+            return $links['/about'] === null
+                && $links['/closure'] === 'phpstorm://open?file='.__FILE__.'&line='.$line;
+        });
 });

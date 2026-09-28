@@ -5,9 +5,13 @@ declare(strict_types=1);
 namespace Projecthanif\RouteScope\Services;
 
 use Closure;
+use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Http\Kernel as HttpKernelContract;
+use Illuminate\Foundation\Http\Kernel as HttpKernel;
 use Illuminate\Routing\RedirectController;
 use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
+use Illuminate\Routing\SortedMiddleware;
 use Illuminate\Routing\ViewController;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -28,7 +32,10 @@ final readonly class RouteScopeService
      */
     private const array METHOD_ORDER = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
-    public function __construct(private Router $router) {}
+    public function __construct(
+        private Router $router,
+        private Container $container,
+    ) {}
 
     /**
      * Get every route, sorted by URI and then by HTTP method.
@@ -82,6 +89,20 @@ final readonly class RouteScopeService
         usort($methods, fn (string $a, string $b): int => $this->methodRank($a) <=> $this->methodRank($b));
 
         return $methods;
+    }
+
+    /**
+     * Global middleware from the HTTP kernel, which runs before any route middleware.
+     *
+     * @return list<string>
+     */
+    public function globalMiddleware(): array
+    {
+        $kernel = $this->httpKernel();
+
+        return $kernel instanceof HttpKernel
+            ? array_values(array_filter($kernel->getGlobalMiddleware(), is_string(...)))
+            : [];
     }
 
     /**
@@ -213,11 +234,34 @@ final readonly class RouteScopeService
     }
 
     /**
+     * Route and controller middleware with groups and aliases expanded, sorted by middleware
+     * priority: the order Laravel runs them in.
+     *
      * @return list<string>
      */
     private function getResolvedMiddleware(Route $route): array
     {
-        return array_values(array_filter($this->router->gatherRouteMiddleware($route), is_string(...)));
+        $sorted = (new SortedMiddleware($this->middlewarePriority(), $this->router->gatherRouteMiddleware($route)))->all();
+
+        return array_values(array_filter($sorted, is_string(...)));
+    }
+
+    /**
+     * @return array<array-key, mixed>
+     */
+    private function middlewarePriority(): array
+    {
+        $kernel = $this->httpKernel();
+
+        return $kernel instanceof HttpKernel ? $kernel->getMiddlewarePriority() : $this->router->middlewarePriority;
+    }
+
+    /**
+     * The HTTP kernel, if the app has one. Resolving it also syncs its middleware priority to the router.
+     */
+    private function httpKernel(): ?object
+    {
+        return $this->container->bound(HttpKernelContract::class) ? $this->container->make(HttpKernelContract::class) : null;
     }
 
     /**
