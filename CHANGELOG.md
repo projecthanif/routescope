@@ -25,7 +25,7 @@ Everything below is planned for **3.0.0**. See [UPGRADE.md](UPGRADE.md).
 ### Deprecated
 - `RouteScope::getAllRoutes()`. It still returns the v2 format and will be removed in v4.
 
-- Redesigned dashboard: a single filterable list with All/API/Web views, expandable rows showing the action, file:line, parameters and resolved middleware, light/dark themes that follow the system, and a `/` shortcut.
+- Redesigned dashboard: a filterable list with All/API/Web views, routes grouped by path prefix in collapsible sections (or a flat list), expandable rows showing the action, file:line, parameters and resolved middleware, light/dark themes that follow the system, and a `/` shortcut.
 - Laravel Boost's `_boost` routes are excluded by default.
 
 ### Removed
