@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Routes Dashboard</title>
+    <title>RouteScope</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -93,7 +93,7 @@
             <div class="relative w-full max-w-sm group">
                 <i data-lucide="search"
                     class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-gray-300 transition-colors"></i>
-                <input id="search-input" type="text" placeholder="Search endpoints..."
+                <input id="search-input" type="text" placeholder="Search path, name, middleware..."
                     class="w-full bg-[#050505] border border-border rounded-lg py-2 pl-10 pr-4 text-sm text-gray-300 placeholder-gray-600 focus:outline-none focus:border-gray-600 transition-colors">
             </div>
         </div>
@@ -105,6 +105,7 @@
                         <th class="px-6 py-3 w-24">Methods</th>
                         <th class="px-6 py-3">Path <i data-lucide="arrow-up"
                                 class="inline w-3 h-3 ml-1 align-middle"></i></th>
+                        <th class="px-6 py-3">Middleware</th>
                         <th class="px-6 py-3">Source</th>
                         <th class="px-6 py-3 w-32 text-right">Actions</th>
                     </tr>
@@ -144,21 +145,49 @@
             return classes[method] || 'text-gray-400 bg-gray-800/40 border-gray-700';
         }
 
+        // Escape untrusted values before inserting them into HTML
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value ?? '';
+            return div.innerHTML;
+        }
+
         // Get file extension badge
         function getFileExtensionBadge(source) {
-            if (source.includes('Closure')) {
+            if (source === 'Closure') {
                 return '<div class="w-4 h-4 bg-purple-900/40 border border-purple-500/30 rounded-[3px] flex items-center justify-center"><span class="text-[8px] font-bold text-purple-400">λ</span></div>';
             }
 
-            if (source.endsWith('.php') || source.includes('Controller')) {
+            if (source.includes('::')) {
                 return '<div class="w-4 h-4 bg-indigo-900/40 border border-indigo-500/30 rounded-[3px] flex items-center justify-center"><span class="text-[8px] font-bold text-indigo-400">PHP</span></div>';
             }
 
-            if (source.endsWith('.ts')) {
-                return '<div class="w-4 h-4 bg-blue-900/40 border border-blue-500/30 rounded-[3px] flex items-center justify-center"><span class="text-[8px] font-bold text-blue-400">TS</span></div>';
+            return '<div class="w-4 h-4 bg-gray-800/40 border border-gray-600/30 rounded-[3px] flex items-center justify-center"><span class="text-[8px] font-bold text-gray-400">•</span></div>';
+        }
+
+        function renderMiddleware(middleware) {
+            if (!middleware.length) {
+                return '<span class="text-gray-700">—</span>';
             }
 
-            return '<div class="w-4 h-4 bg-gray-800/40 border border-gray-600/30 rounded-[3px] flex items-center justify-center"><span class="text-[8px] font-bold text-gray-400">•</span></div>';
+            return middleware.map(m =>
+                `<span class="inline-block text-[10px] font-mono px-1.5 py-0.5 mr-1 mb-1 rounded border border-gray-800 bg-[#111] text-gray-400">${escapeHtml(m)}</span>`
+            ).join('');
+        }
+
+        // Only GET routes without parameters can be opened directly
+        function canOpen(route) {
+            return route.method === 'GET' && !route.path.includes('{');
+        }
+
+        async function copyToClipboard(text, button) {
+            try {
+                await navigator.clipboard.writeText(text);
+                button.classList.add('text-green-400');
+                setTimeout(() => button.classList.remove('text-green-400'), 1000);
+            } catch (e) {
+                window.prompt('Copy path:', text);
+            }
         }
 
         // Render routes
@@ -168,7 +197,7 @@
             if (routes.length === 0) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="4" class="px-6 py-8 text-center text-gray-500">
+                        <td colspan="5" class="px-6 py-8 text-center text-gray-500">
                             No routes found
                         </td>
                     </tr>
@@ -179,7 +208,7 @@
             routes.forEach(route => {
                 const tr = document.createElement('tr');
                 tr.className =
-                    'border-b border-border hover:bg-[#111] transition-colors group cursor-default last:border-0';
+                    'border-b border-border hover:bg-[#111] transition-colors group cursor-default last:border-0 align-top';
 
                 // Path highlighting (last segment white, rest gray)
                 const pathParts = route.path.split('/');
@@ -189,26 +218,31 @@
                 tr.innerHTML = `
                     <td class="px-6 py-4">
                         <span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${getMethodBadgeClass(route.method)}">
-                            ${route.method}
+                            ${escapeHtml(route.method)}
                         </span>
                     </td>
                     <td class="px-6 py-4 font-mono text-gray-500">
-                        ${prefix}<span class="text-white font-medium">${lastPart}</span>
+                        ${escapeHtml(prefix)}<span class="text-white font-medium">${escapeHtml(lastPart)}</span>
+                        ${route.name ? `<div class="text-xs text-gray-600 mt-1">${escapeHtml(route.name)}</div>` : ''}
                     </td>
+                    <td class="px-6 py-4">${renderMiddleware(route.middleware)}</td>
                     <td class="px-6 py-4 text-gray-500">
                         <div class="flex items-center gap-2">
                             ${getFileExtensionBadge(route.source)}
-                            <span class="truncate max-w-[300px]">${route.source}</span>
+                            <span class="truncate max-w-[300px]" title="${escapeHtml(route.source)}">${escapeHtml(route.source)}</span>
                         </div>
                     </td>
                     <td class="px-6 py-4 text-right">
                         <div class="flex items-center justify-end gap-3 text-gray-500">
-                            <button class="hover:text-white transition-colors" title="View code"><i data-lucide="code-2" class="w-4 h-4"></i></button>
-                            <button class="hover:text-white transition-colors" title="Test endpoint"><i data-lucide="play" class="w-4 h-4"></i></button>
-                            <button class="hover:text-blue-400 transition-colors" title="Copy path"><i data-lucide="copy" class="w-4 h-4"></i></button>
+                            ${canOpen(route)
+                                ? `<a href="${escapeHtml(route.path)}" target="_blank" rel="noopener" class="hover:text-white transition-colors" title="Open in new tab"><i data-lucide="external-link" class="w-4 h-4"></i></a>`
+                                : ''}
+                            <button data-copy class="hover:text-blue-400 transition-colors" title="Copy path"><i data-lucide="copy" class="w-4 h-4"></i></button>
                         </div>
                     </td>
                 `;
+                const copyButton = tr.querySelector('[data-copy]');
+                copyButton.addEventListener('click', () => copyToClipboard(route.path, copyButton));
                 tableBody.appendChild(tr);
             });
 
@@ -222,7 +256,9 @@
             const filtered = currentRoutes.filter(route => {
                 return route.path.toLowerCase().includes(query) ||
                     route.method.toLowerCase().includes(query) ||
-                    route.source.toLowerCase().includes(query);
+                    route.source.toLowerCase().includes(query) ||
+                    (route.name ?? '').toLowerCase().includes(query) ||
+                    route.middleware.some(m => m.toLowerCase().includes(query));
             });
             renderRoutes(filtered);
             routeCount.textContent = filtered.length;
